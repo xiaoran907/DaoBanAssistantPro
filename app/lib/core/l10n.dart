@@ -852,6 +852,15 @@ class L10n {
   /// 信息卡那行「本月统计」的前缀，后面接 `早12 · 午8 · 夜8 · 休6`（班次简称
   /// 直接取 `ShiftClass.shortLabel`，日历格子里已经在用那一套，中英文各自成立）。
   static String get monthTally => t('本月', 'This month');
+
+  /// 日历格子第 1 行右半：这天有几段岗次。
+  static String cellShiftCount(int n) => isEn ? '$n sh' : '$n 岗';
+
+  /// 今天格倒计时：距下一段岗次开始还有多少分钟（< 1h 时用这一档）。
+  static String countdownMin(int m) => isEn ? 'in ${m}m' : '距 ${m}min';
+
+  /// 今天格倒计时：距下一段岗次开始还有多少小时（≥ 1h 时用这一档）。
+  static String countdownH(int h) => isEn ? 'in ${h}h' : '距 ${h}h';
   static String get savedAndRescheduled => t('已保存并重排闹钟', 'Saved & alarms rescheduled');
   static String switchedTo(String name) => isEn ? 'Switched to $name' : '已切换到 $name';
   static List<String> get weekdays => isEn
