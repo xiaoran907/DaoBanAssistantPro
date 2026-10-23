@@ -199,13 +199,17 @@ class WebDavClient {
   }
 
   /// 远程文件（或目录）的属性；404 → null。
+  ///
+  /// **409 也当不存在处理**：坚果云 WebDAV 对不存在的文件返 409 Conflict
+  /// 而不是标准 404 —— 兼容层（见 jianguoyun WebDAV 兼容性 GitHub issue
+  /// `qixing-jk/all-api-hub#633`），否则首次同步永远卡在「服务器拒返（HTTP 409）」。
   Future<WebDavItem?> stat(String path) async {
     final (status, body, _) = await _send(
       'PROPFIND',
       resolve(path),
       headers: {'Depth': '0'},
     );
-    if (status == 404) return null;
+    if (status == 404 || status == 409) return null;
     if (status < 200 || status >= 300) {
       throw WebDavException('PROPFIND 失败', status: status);
     }
@@ -223,7 +227,11 @@ class WebDavClient {
     );
   }
 
-  /// 逐级建目录（含末级）。405（已存在）照成功处理 —— 这里的语义是「确保存在」。
+  /// 逐级建目录（含末级）。405（已存在）/ 409（坚果云：已存在）照成功处理
+  /// —— 这里的语义是「确保存在」。
+  ///
+  /// 409 一并当成功是因为坚果云对 MKCOL 已存在的目录返 409 而不是标准 405
+  /// （anx-reader#410 同因）；若父目录真的不存在，下一步 PUT 会暴露。
   Future<void> ensureDir(String dirPath) async {
     final segments =
         dirPath.split('/').where((s) => s.isNotEmpty).toList();
@@ -231,16 +239,18 @@ class WebDavClient {
     for (final seg in segments) {
       built = '$built/$seg';
       final (status, _, _) = await _send('MKCOL', resolve(built));
-      if (status != 405 && (status < 200 || status >= 300)) {
+      if (status != 405 && status != 409 && (status < 200 || status >= 300)) {
         throw WebDavException('MKCOL $built 失败', status: status);
       }
     }
   }
 
   /// 读远程文件；404 → [WebDavNotFoundException]。
+  ///
+  /// 409 也当不存在：坚果云对不存在的文件返 409 而不是标准 404。
   Future<String> get(String path) async {
     final (status, body, _) = await _send('GET', resolve(path));
-    if (status == 404) throw const WebDavNotFoundException();
+    if (status == 404 || status == 409) throw const WebDavNotFoundException();
     if (status < 200 || status >= 300) {
       throw WebDavException('GET 失败', status: status);
     }

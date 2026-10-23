@@ -34,6 +34,11 @@ class _StubDavServer {
   String? forcedRealm; // 非空时要求 Basic 认证（账号 u / 密码 correct-pass）
   int? forcedStatus;   // 非空时所有请求都强制返回该 HTTP 状态（优先于其他分支）
 
+  /// 模拟坚果云 WebDAV：不存在的文件返 409 而不是标准 404（PROPFIND / GET），
+  /// MKCOL 已存在的目录返 409 而不是 405 —— 客户端必须能把这些 409 当兼容
+  /// 处理，否则首次同步就卡死（见 jianguoyun WebDAV 兼容性 GitHub issue）。
+  bool jianguoyunLike = false;
+
   _StubDavServer._(this._server);
 
   static Future<_StubDavServer> start() async {
@@ -90,12 +95,13 @@ class _StubDavServer {
               '<d:getlastmodified>$lastMod</d:getlastmodified>'
               '</d:prop></d:propstat></d:response></d:multistatus>');
         } else {
-          req.response.statusCode = 404;
+          // 坚果云不存在的文件返 409，不是 404 —— 客户端得兼容。
+          req.response.statusCode = jianguoyunLike ? 409 : 404;
         }
       case 'GET':
         final f = files[path];
         if (f == null) {
-          req.response.statusCode = 404;
+          req.response.statusCode = jianguoyunLike ? 409 : 404;
         } else {
           req.response.write(f.body);
         }
@@ -103,7 +109,7 @@ class _StubDavServer {
         files[path] = (body: body, mtime: DateTime.now());
       case 'MKCOL':
         if (files.containsKey(path) || dirs.contains(path)) {
-          req.response.statusCode = 405;
+          req.response.statusCode = jianguoyunLike ? 409 : 405;
         } else {
           dirs.add(path);
         }
@@ -213,6 +219,18 @@ void main() {
               .having((e) => e.kind, 'kind', WebDavNetworkKind.other),
         ),
       );
+    });
+
+    test('坚果云兼容：不存在的文件返 409 → stat 返 null、ensureDir 不抛', () async {
+      dav.jianguoyunLike = true;
+      final client = WebDavClient(
+        baseUrl: dav.baseUrl, user: 'u', password: 'p');
+      // 不存在的文件 → stat 不抛异常、返 null（坚果云返 409，不当错误）。
+      expect(await client.stat('/nope.json'), isNull);
+      // MKCOL 到不存在的目录 → 创建成功（无异常）。
+      await client.ensureDir('/newdir');
+      // MKCOL 到已存在的目录 → 坚果云返 409，当成功。
+      await client.ensureDir('/newdir');
     });
   });
 
@@ -369,6 +387,20 @@ void main() {
       expect(result.outcome, WebDavSyncOutcome.error);
       expect(result.error, 'http:400',
           reason: 'HTTP 层非 2xx 带状态码 —— UI 直接报「服务器拒返（HTTP 400）」');
+    });
+
+    test('坚果云兼容：首次上传在 409 兼容处理下能跑通', () async {
+      dav.jianguoyunLike = true;
+      // PROPFIND 返 409（当作不存在）、MKCOL 返 201 创建成功、PUT 写回。
+      final first = await WebDavSync(passwords: _MemPasswords())
+          .run(db: db, sp: sp);
+      expect(first.outcome, WebDavSyncOutcome.uploaded,
+          reason: '坚果云 409 不再卡在首次上传（以前报「服务器拒返（HTTP 409）」）');
+      expect(dav.files[remotePath], isNotNull);
+      // 第二次同步：PROPFIND 返 207，无变化。
+      final second = await WebDavSync(passwords: _MemPasswords())
+          .run(db: db, sp: sp);
+      expect(second.outcome, WebDavSyncOutcome.noChange);
     });
   });
 }

@@ -147,9 +147,7 @@ Map<String, Object?> buildWidgetSnapshot({
       'shiftAbbr': shift?.timeRangeText ?? '',
       'color': shift?.color ?? 0,
       // v0.12.5：多胶囊堆叠。日历格子要显示的所有时段胶囊（上限 3）。
-      'shifts': shiftList.take(3).map((s) => {
-        return {'label': s.timeRangeText, 'color': s.color};
-      }).toList(),
+      'shifts': shiftList.take(3).map((s) => {'label': s.timeRangeText, 'color': s.color}).toList(),
       // 超出 3 个的折叠数（原生侧用它画「+N」徽标）。
       'shiftsOverflow': shiftList.length > 3 ? shiftList.length - 3 : 0,
       'timeRange': timeRange,

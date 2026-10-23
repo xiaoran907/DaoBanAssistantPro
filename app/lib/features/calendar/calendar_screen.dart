@@ -1804,9 +1804,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     for (var d = 1; d <= _daysInMonth; d++) {
       final date = DateTime(_month.year, _month.month, d);
       // 这一格的中心（格层坐标）—— 液态档拿它去算「内容被透镜挤成什么样」。
-      final int slot = _leading + d - 1;
-      final Offset cellCenter = Offset(_hPad + (slot % 7 + 0.5) * cellW,
-          _weekdayH + (slot ~/ 7 + 0.5) * cellH);
+      // v0.12.5：日历格子关掉液态档挤压场（`warpCenter` 恒传 null），这条注释保留以备将来重启。
       cells.add(_dayCell(
           context,
           date,
@@ -1960,7 +1958,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   clipBehavior: Clip.none,
                   children: [
                     _segmentChip(context, visible[i], s,
-                        ValueKey('day-chip-${date.day}-$i'), showLunarDay),
+                        // 第一个胶囊用原 key（向后兼容现有测试），后续加索引。
+                        ValueKey('day-chip-${date.day}${i == 0 ? '' : '-$i'}'),
+                        showLunarDay),
                     // 右上角那个点 = 这天被单独调过班（`day-adjusted-N`）。
                     // 只画在第一个胶囊上：多个胶囊时点第一个，语义是「这天被调过」。
                     if (i == 0 && adjusted)
@@ -2124,7 +2124,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   Widget _segmentChip(BuildContext context, ShiftClass shift, double s,
       Key key, bool showLunarDay) {
     final color = Color(shift.color);
-    final fill = 0.12;
+    const fill = 0.12;
     final label = shift.timeRangeText;
 
     return AnimatedContainer(
