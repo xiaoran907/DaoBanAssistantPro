@@ -69,7 +69,7 @@ void main() {
       final chain = ScheduleChain(fallback: fourShift());
       const config = PayrollConfig(monthlyWage: 8000);
       final month =
-          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
+          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config.monthlyWage, const {});
 
       // 2025-01：白班 8、上夜班 8、下夜班 7（不计）、大休 8（不计）。
       expect(month.workedDays, 16);
@@ -94,7 +94,7 @@ void main() {
       const chain = ScheduleChain();
       const config = PayrollConfig(monthlyWage: 8000);
       final month =
-          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
+          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config.monthlyWage, const {});
 
       expect(month.workedDays, 0);
       expect(month.days, isEmpty);
@@ -116,7 +116,7 @@ void main() {
       ]);
       const config = PayrollConfig(monthlyWage: 8000);
       final month =
-          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
+          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config.monthlyWage, const {});
 
       expect(month.workedDays, 1);
       expect(month.total, closeTo(8000, 0.001));
@@ -129,7 +129,7 @@ void main() {
         dayNumber(DateTime.utc(2025, 1, 6)): 640.0,
         dayNumber(DateTime.utc(2025, 1, 10)): 320.0,
       };
-      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, extras);
+      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config.monthlyWage, extras);
 
       expect(month.extraTotal, closeTo(640 + 320, 0.001));
       expect(month.extraDays, 2);
@@ -142,7 +142,7 @@ void main() {
       const config = PayrollConfig(monthlyWage: 8000);
       // 1/9 是大休（isRest）。
       final extras = {dayNumber(DateTime.utc(2025, 1, 9)): 500.0};
-      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, extras);
+      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config.monthlyWage, extras);
 
       expect(month.extraTotal, 0);
       expect(month.extraDays, 0);
@@ -192,7 +192,7 @@ void main() {
       );
       const config = PayrollConfig(monthlyWage: 8000);
       final month =
-          computeMonthPay(chain, DateTime.utc(2026, 1, 10), config, const {});
+          computeMonthPay(chain, DateTime.utc(2026, 1, 10), config.monthlyWage, const {});
 
       // 1/1..1/15：白休轮转 = 白 8 天（1,3,5,7,9,11,13,15）；
       // 1/16..1/31：从 1/16 起按 B（1/16 休、1/17 班…）= 夜 8 天。
@@ -209,7 +209,10 @@ void main() {
     test('12 个月按 1 月在前的升序，出勤各自独立', () {
       final chain = ScheduleChain(fallback: fourShift());
       const config = PayrollConfig(monthlyWage: 8000);
-      final year = computeYearPay(chain, 2025, config, const {});
+      final monthlyWages = {
+        for (var m = 1; m <= 12; m++) (2025, m): config.monthlyWage,
+      };
+      final year = computeYearPay(chain, 2025, monthlyWages, const {});
 
       expect(year.length, 12);
       expect(year[0].month, 1);
@@ -245,7 +248,10 @@ void main() {
         ),
       ]);
       const config = PayrollConfig(monthlyWage: 8000);
-      final year = computeYearPay(chain, 2025, config, const {});
+      final monthlyWages = {
+        for (var m = 1; m <= 12; m++) (2025, m): config.monthlyWage,
+      };
+      final year = computeYearPay(chain, 2025, monthlyWages, const {});
 
       // 1 月出勤 0 天 → total == 0（T11）。
       expect(year[0].workedDays, 0);

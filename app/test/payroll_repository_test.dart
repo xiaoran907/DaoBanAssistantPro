@@ -38,7 +38,7 @@ void main() {
       expect(config.monthlyWage, 350);
       expect(config.isUnset, isFalse);
 
-      final rows = await db.select(db.payrollSettingsRows).get();
+      final rows = await db.select(db.payrollMonthlyRows).get();
       expect(rows, hasLength(1), reason: '单例行，永远只有一行');
     });
 
@@ -80,8 +80,8 @@ void main() {
   group('发薪记录', () {
     test('保存 / 更新 / 清除；actual 可空（只写备注）', () async {
       await repo.savePayrollRecord(
-          year: 2025, month: 1, actual: 5120, note: '工资');
-      await repo.savePayrollRecord(year: 2024, month: 12, actual: null, note: '漏发了');
+          year: 2025, month: 1, seq: 0, actual: 5120, note: '工资');
+      await repo.savePayrollRecord(year: 2024, month: 12, seq: 0, actual: null, note: '漏发了');
 
       final records = await repo.listPayrollRecords();
       expect(records, hasLength(2));
@@ -93,21 +93,21 @@ void main() {
       expect(records.last.note, '漏发了');
 
       // 同月再存 = 更新。
-      await repo.savePayrollRecord(year: 2025, month: 1, actual: 5000);
+      await repo.savePayrollRecord(year: 2025, month: 1, seq: 0, actual: 5000);
       final updated = await repo.listPayrollRecords();
       expect(updated.first.actual, 5000);
       expect(updated.first.note, isNull, reason: '没传备注 = 清掉');
 
       // 清除；清不存在的也安静。
-      await repo.deletePayrollRecord(2025, 1);
-      await repo.deletePayrollRecord(1999, 1);
+      await repo.deletePayrollRecord(2025, 1, 0);
+      await repo.deletePayrollRecord(1999, 1, 0);
       final left = await repo.listPayrollRecords();
       expect(left, hasLength(1));
     });
 
     test('watch 流按年月倒序', () async {
-      await repo.savePayrollRecord(year: 2025, month: 1, actual: 1);
-      await repo.savePayrollRecord(year: 2024, month: 12, actual: 2);
+      await repo.savePayrollRecord(year: 2025, month: 1, seq: 0, actual: 1);
+      await repo.savePayrollRecord(year: 2024, month: 12, seq: 0, actual: 2);
 
       final seen = <int>[];
       final sub = repo
@@ -123,10 +123,10 @@ void main() {
   test('backup 清空重置也清薪资三张表', () async {
     await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
     await repo.setPayrollDayWage(DateTime.utc(2025, 1, 6), 640);
-    await repo.savePayrollRecord(year: 2025, month: 1, actual: 5000);
+    await repo.savePayrollRecord(year: 2025, month: 1, seq: 0, actual: 5000);
     await repo.clearAll();
 
-    final settings = await db.select(db.payrollSettingsRows).get();
+    final settings = await db.select(db.payrollMonthlyRows).get();
     final days = await db.select(db.payrollDayRows).get();
     final records = await db.select(db.payrollRecordRows).get();
     expect(settings, isEmpty);
@@ -135,7 +135,7 @@ void main() {
   });
 
   test('nullable real 列读回来不串类型', () async {
-    await repo.savePayrollRecord(year: 2025, month: 2, actual: null, note: 'x');
+    await repo.savePayrollRecord(year: 2025, month: 2, seq: 0, actual: null, note: 'x');
     final row = (await db.select(db.payrollRecordRows).get()).single;
     expect(row.actual, isNull);
     expect(row.month, 2);

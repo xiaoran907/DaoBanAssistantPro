@@ -303,19 +303,23 @@ class RecurringSeriesRows extends Table {
   DateTimeColumn get createdAt => dateTime()();
 }
 
-/// 工资设置表：**只有一行**。
+/// 逐月月薪配置表：每月一条，记录这个月的月薪。
 ///
-/// [id] 自增但从不用于查询 —— 写入一律走「删掉全部再插一行」的 upsert（配置表
-/// 只有一行，比 `INSERT OR REPLACE` 直白，也不会漏掉默认值）。
-class PayrollSettingsRows extends Table {
-  IntColumn get id => integer().autoIncrement()();
+/// 用户 2026-10-24 拍板（v0.13）：不想要「全局月薪」一个固定数，
+/// 而是每个月灵活填（「每个月可能月薪都不一样」）。
+///
+/// 复合主键 `{year, month}`：每月一条，编辑即覆盖。
+class PayrollMonthlyRows extends Table {
+  IntColumn get year => integer()();
+  IntColumn get month => integer()();
 
-  /// 月薪（元/月）。0 = 还没设过（统计页据此显示指路文案，而不是满屏 ¥0.00）。
-  ///
-  /// **包月制**（v0.12.3）：出勤天数不改变这笔钱；加班 / 双倍工资那天走
-  /// [PayrollDayRows] 单独加一笔。历史 v16 的 `daily_wage` / `daily_subsidy` 两列
-  /// 在 v17 迁移里已删（见 [MigrationStrategy.onUpgrade]）。
-  RealColumn get monthlyWage => real().withDefault(const Constant(0))();
+  /// 月薪（元）。0 = 没填。
+  RealColumn get wage => real().withDefault(const Constant(0))();
+
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {year, month};
 }
 
 /// 单日加项表：某天的加班 / 双倍工资，在月薪之外额外加一笔。
@@ -334,13 +338,18 @@ class PayrollDayRows extends Table {
   Set<Column> get primaryKey => {day};
 }
 
-/// 发薪记录表：每月一条，记实际发了多少。可与系统算出的应发不同 —— 扣款、
-/// 补贴补发、跨月结算这些都不进引擎，只在这记一笔。
+/// 发薪记录表：同一个月可以有多条实发记录（月中一次、月底一次）。
 ///
-/// 复合主键 `{year, month}`：一个月只能有一条，编辑即覆盖。
+/// 用户 2026-10-24 拍板（v0.13）：发薪记录要能多条。
+///
+/// 复合主键 `{year, month, seq}`：`seq` 是同一月内的第几条记录（0 起）。
+/// 编辑某条 = 覆盖该行；删掉某条 = 删该行（不留空位、不重排 seq）。
 class PayrollRecordRows extends Table {
   IntColumn get year => integer()();
   IntColumn get month => integer()();
+
+  /// 同一月内第几条（0 起）。
+  IntColumn get seq => integer()();
 
   /// 实发金额；null = 还没记（统计页显示「未记」而不是 0）。
   RealColumn get actual => real().nullable()();
@@ -348,7 +357,7 @@ class PayrollRecordRows extends Table {
   TextColumn get note => text().nullable()();
 
   @override
-  Set<Column> get primaryKey => {year, month};
+  Set<Column> get primaryKey => {year, month, seq};
 }
 
 @DriftDatabase(tables: [
@@ -364,8 +373,8 @@ class PayrollRecordRows extends Table {
   ShiftDayOverrides,
   CustomTemplates,
   RecurringSeriesRows,
-  PayrollSettingsRows,
   PayrollDayRows,
+  PayrollMonthlyRows,
   PayrollRecordRows,
 ])
 class AppDatabase extends _$AppDatabase {
@@ -375,28 +384,45 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          if (from < 17) {
-            // 薪资模型改包月制：删 `daily_wage` / `daily_subsidy` 两列，加
-            // `monthly_wage` 一列（v0.12.3，用户拍板「清空重填」）。
+          if (from < 18) {
+            // v0.13：撤销 v17 的全局月薪（包月制），改成「逐月灵活填」。
             //
-            // v16 才加的三张表，老数据本来就要清空，所以直接 DROP + CREATE 而不是
-            // `TableMigration` 重建 —— 后者会保留旧行，还要额外 DELETE，不如一步到位。
-            // `payroll_day_rows` 表名列名不变，只改语义（「替换日薪」→「加项」），
-            // 但金额是按旧口径填的、留下来会算飞，所以清空。
-            // `payroll_record_rows`（实发记录）与薪资模型无关，不动。
-            await customStatement('DROP TABLE payroll_settings_rows');
-            await m.createTable(payrollSettingsRows);
-            await customStatement('DELETE FROM payroll_day_rows');
+            // 用户 2026-10-24 拍板：「每个月可能月薪都不一样」—— 全局月薪一个固定数
+            // 满足不了，删掉 `payroll_settings_rows` 表，新增 `payroll_monthly_rows`
+            // （每月一条，主键 `{year, month}`）。
+            //
+            // `payroll_record_rows` 主键从 `{year, month}` 改成 `{year, month, seq}`，
+            // 支持同一月多条实发（月中一次、月底一次）。老数据都是「每月一条」，
+            // 迁移时给每条旧记录补 `seq = 0`（保留它们）。
+            //
+            // `payroll_day_rows`（加项）保留，语义不变。
+            //
+            // 从 v16 及更早升上来：payroll_settings_rows 可能是旧 schema（daily_wage）
+            // 或新 schema（monthly_wage），无论哪个都直接 DROP，不区分版本。
+            await customStatement('DROP TABLE IF EXISTS payroll_settings_rows');
+            await m.createTable(payrollMonthlyRows);
+            // payroll_record_rows 主键变了：先备份旧数据，删表，重建，把旧数据搬过来（seq = 0）。
+            await customStatement('CREATE TABLE payroll_record_rows_v17_backup AS '
+                'SELECT * FROM payroll_record_rows');
+            await customStatement('DROP TABLE payroll_record_rows');
+            await m.createTable(payrollRecordRows);
+            await customStatement('INSERT INTO payroll_record_rows (year, month, seq, actual, note) '
+                'SELECT year, month, 0, actual, note FROM payroll_record_rows_v17_backup');
+            await customStatement('DROP TABLE payroll_record_rows_v17_backup');
           }
           if (from < 16) {
-            // 统计与薪资：三张新表，一行既有数据都不碰。
-            await m.createTable(payrollSettingsRows);
+            // 统计与薪资：三张新表（v16），一行既有数据都不碰。
+            // v18 会把 payroll_settings_rows 删掉，但这里先建出来，保证中间态一致。
+            // 用 raw SQL 建 payroll_settings_rows：PayrollSettingsRows 类已在 v18 废弃。
+            await customStatement('CREATE TABLE IF NOT EXISTS payroll_settings_rows ('
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                'monthly_wage REAL NOT NULL DEFAULT 0)');
             await m.createTable(payrollDayRows);
             await m.createTable(payrollRecordRows);
           }

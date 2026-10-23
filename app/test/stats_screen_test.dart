@@ -77,7 +77,7 @@ void main() {
     final month = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(monthlyWage: 320),
+      320,
       const {},
     );
     // 金额卡上那行就是现算的总额（同一口径的 moneyText）。
@@ -91,7 +91,7 @@ void main() {
     final monthBefore = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(monthlyWage: 320),
+      320,
       const {},
     );
     if (monthBefore.days.isEmpty) {
@@ -123,7 +123,7 @@ void main() {
     final monthAfter = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(monthlyWage: 320),
+      320,
       await repo.listPayrollDayWages(),
     );
     expect(monthAfter.total, closeTo(monthBefore.total + 640, 0.001));

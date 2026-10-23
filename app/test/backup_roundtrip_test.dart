@@ -46,7 +46,7 @@ void main() {
         const PayrollConfig(monthlyWage: 320));
     await repo.setPayrollDayWage(DateTime.utc(2025, 1, 6), 640);
     await repo.savePayrollRecord(
-        year: 2025, month: 1, actual: 5120, note: '工资');
+        year: 2025, month: 1, seq: 0, actual: 5120, note: '工资');
 
     final sp = await prefsWith({
       'themeMode': 'dark',
@@ -93,8 +93,8 @@ void main() {
     expect(alarms.single.hour, 6);
 
     // 薪资那半边。
-    final settings = await db.select(db.payrollSettingsRows).get();
-    expect(settings.single.monthlyWage, 320);
+    final settings = await db.select(db.payrollMonthlyRows).get();
+    expect(settings.single.wage, 320);
     final dayWages = await db.select(db.payrollDayRows).get();
     expect(dayWages.single.wage, 640);
     final records = await db.select(db.payrollRecordRows).get();
@@ -167,7 +167,7 @@ void main() {
     expect(await db.select(db.shiftClassAlarms).get(), isEmpty);
     expect(await db.select(db.customTemplates).get(), isEmpty);
     // _tablesOf 里登记了 15 张表：全都清空了（用方案行之外的两张抽查）。
-    expect(await db.select(db.payrollSettingsRows).get(), isEmpty);
+    expect(await db.select(db.payrollMonthlyRows).get(), isEmpty);
     expect(await db.select(db.recurringSeriesRows).get(), isEmpty);
   });
 }

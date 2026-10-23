@@ -326,15 +326,15 @@ List<_TableBackup> _tableBackups(AppDatabase db) => [
         },
       ),
       _TableBackup(
-        name: 'payroll_settings_rows',
+        name: 'payroll_monthly_rows',
         readJson: () async => [
-          for (final r in await db.select(db.payrollSettingsRows).get())
+          for (final r in await db.select(db.payrollMonthlyRows).get())
             r.toJson(),
         ],
         writeRows: (rows) async {
           for (final j in rows) {
-            await db.into(db.payrollSettingsRows).insert(
-                  PayrollSettingsRow.fromJson(j),
+            await db.into(db.payrollMonthlyRows).insert(
+                  PayrollMonthlyRow.fromJson(j),
                   mode: InsertMode.insertOrReplace,
                 );
           }

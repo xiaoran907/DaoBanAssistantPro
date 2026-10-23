@@ -403,7 +403,7 @@ class AppRepository {
       await db.delete(db.customAlarms).go();
       await db.delete(db.customTemplates).go();
       // 薪资三张表（统计与薪资）：与排班表无外键关系，也要清掉。
-      await db.delete(db.payrollSettingsRows).go();
+      await db.delete(db.payrollMonthlyRows).go();
       await db.delete(db.payrollDayRows).go();
       await db.delete(db.payrollRecordRows).go();
     });
@@ -414,33 +414,80 @@ class AppRepository {
   // 统计与薪资
   // ------------------------------------------------------------------
 
-  /// 薪资设置；没存过返回**全 0**（[PayrollConfig.isUnset]）而不是 null ——
-  /// 引擎拿它直接算，界面据 isUnset 决定是画空态还是画数。
-  Future<PayrollConfig> getPayrollConfig() async {
-    final row = await db.select(db.payrollSettingsRows).getSingleOrNull();
-    if (row == null) return const PayrollConfig();
-    return PayrollConfig(monthlyWage: row.monthlyWage);
+  /// 取某月的月薪配置；没存过返回 wage = 0（[MonthlyWageConfig.isUnset]）。
+  Future<MonthlyWageConfig> getMonthlyWageConfig(int year, int month) async {
+    final row = await (db.select(db.payrollMonthlyRows)
+          ..where(
+              (t) => t.year.equals(year) & t.month.equals(month)))
+        .getSingleOrNull();
+    if (row == null) return MonthlyWageConfig(year: year, month: month);
+    return MonthlyWageConfig(
+      year: row.year,
+      month: row.month,
+      wage: row.wage,
+      note: row.note,
+    );
   }
 
-  /// 保存设置（单例行）：先删后插。
-  ///
-  /// 不用 upsert：`id` 是自增主键、不指住任何东西，显式带回去写回反而会在
-  /// 备份还原时把主键序列带偏。删干净再插一行恒好，也顺手保证「永远只有一行」。
+  /// 保存某月的月薪配置（覆盖写入）。
+  Future<void> setMonthlyWageConfig(MonthlyWageConfig config) async {
+    await db.into(db.payrollMonthlyRows).insertOnConflictUpdate(
+          PayrollMonthlyRowsCompanion.insert(
+            year: config.year,
+            month: config.month,
+            wage: Value(config.wage),
+            note: Value(config.note),
+          ),
+        );
+  }
+  /// 删掉某月的月薪配置。
+  Future<void> deleteMonthlyWageConfig(int year, int month) async {
+    await (db.delete(db.payrollMonthlyRows)
+          ..where((t) => t.year.equals(year) & t.month.equals(month)))
+        .go();
+  }
+
+  /// 全部月薪配置（引擎按 `(year, month) → wage` 的 map 算）。
+  Future<Map<(int, int), double>> listMonthlyWageConfigs() async {
+    final rows = await db.select(db.payrollMonthlyRows).get();
+    return {for (final r in rows) (r.year, r.month): r.wage};
+  }
+
+  /// [listMonthlyWageConfigs] 的流版本（改了某月配置后立刻重算）。
+  Stream<Map<(int, int), double>> watchMonthlyWageConfigs() => db
+      .select(db.payrollMonthlyRows)
+      .watch()
+      .map((rows) => {for (final r in rows) (r.year, r.month): r.wage});
+
+  // --- 兼容旧接口（已废弃，但测试文件和旧 UI 代码还在用）---
+
+  /// @deprecated 用 [getMonthlyWageConfig] 代替。
+  @Deprecated('Use getMonthlyWageConfig instead')
+  Future<PayrollConfig> getPayrollConfig() async {
+    final now = DateTime.now();
+    final config = await getMonthlyWageConfig(now.year, now.month);
+    return PayrollConfig(monthlyWage: config.wage);
+  }
+
+  /// @deprecated 用 [setMonthlyWageConfig] 代替。
+  @Deprecated('Use setMonthlyWageConfig instead')
   Future<void> setPayrollConfig(PayrollConfig config) async {
-    await db.transaction(() async {
-      await db.delete(db.payrollSettingsRows).go();
-      await db.into(db.payrollSettingsRows).insert(PayrollSettingsRowsCompanion(
-            monthlyWage: Value(config.monthlyWage),
-          ));
+    final now = DateTime.now();
+    await setMonthlyWageConfig(MonthlyWageConfig(
+      year: now.year,
+      month: now.month,
+      wage: config.monthlyWage,
+    ));
+  }
+
+  /// @deprecated 用 [watchMonthlyWageConfigs] 代替。
+  @Deprecated('Use watchMonthlyWageConfigs instead')
+  Stream<PayrollConfig> watchPayrollConfig() {
+    return watchMonthlyWageConfigs().map((configs) {
+      final now = DateTime.now();
+      return PayrollConfig(monthlyWage: configs[(now.year, now.month)] ?? 0);
     });
   }
-
-  Stream<PayrollConfig> watchPayrollConfig() => db
-      .select(db.payrollSettingsRows)
-      .watch()
-      .map((rows) => rows.isEmpty
-          ? const PayrollConfig()
-          : PayrollConfig(monthlyWage: rows.single.monthlyWage));
 
   /// 给某一天单独设加项（加班 / 双倍工资那天在月薪之外额外加一笔）。
   ///
@@ -477,11 +524,12 @@ class AppRepository {
       .watch()
       .map((rows) => {for (final r in rows) r.day: r.wage});
 
-  /// 记一个月的实发。[actual] 可空（只写备注也算一条）；不传 [note] 等于把备注
-  /// 清掉（两列都用 [Value] 显式写，否则保留旧值 —— 与「覆盖即全部重述」一致）。
+  /// 记一个月的实发。[seq] 是同一月内第几条（0 起）；[actual] 可空；不传 [note]
+  /// 等于把备注清掉。
   Future<void> savePayrollRecord({
     required int year,
     required int month,
+    required int seq,
     double? actual,
     String? note,
   }) async {
@@ -489,24 +537,27 @@ class AppRepository {
           PayrollRecordRowsCompanion.insert(
             year: year,
             month: month,
+            seq: seq,
             actual: Value(actual),
             note: Value(note),
           ),
         );
   }
 
-  Future<void> deletePayrollRecord(int year, int month) async {
+  Future<void> deletePayrollRecord(int year, int month, int seq) async {
     await (db.delete(db.payrollRecordRows)
-          ..where((t) => t.year.equals(year) & t.month.equals(month)))
+          ..where((t) =>
+              t.year.equals(year) & t.month.equals(month) & t.seq.equals(seq)))
         .go();
   }
 
-  /// 发薪记录，**按年月倒序**（新月份在前）。
+  /// 发薪记录，**按年月倒序**（新月份在前），同一月按 seq 升序。
   Future<List<PayrollRecordRow>> listPayrollRecords() {
     final q = db.select(db.payrollRecordRows)
       ..orderBy([
         (t) => OrderingTerm.desc(t.year),
         (t) => OrderingTerm.desc(t.month),
+        (t) => OrderingTerm.asc(t.seq),
       ]);
     return q.get();
   }
@@ -516,6 +567,7 @@ class AppRepository {
             ..orderBy([
               (t) => OrderingTerm.desc(t.year),
               (t) => OrderingTerm.desc(t.month),
+              (t) => OrderingTerm.asc(t.seq),
             ]))
           .watch();
 
@@ -1537,10 +1589,18 @@ final shiftAlarmOverridesProvider = StreamProvider<Map<int, bool>>((ref) {
 // 统计与薪资
 // ---------------------------------------------------------------------------
 
-/// 薪资设置（库里的单例行）。用流而不是 FutureProvider：右上角那个设置层改完，
-/// 汇总卡要立刻重算。
-final payrollConfigProvider = StreamProvider<PayrollConfig>(
-    (ref) => ref.watch(appRepositoryProvider).watchPayrollConfig());
+/// 月薪配置（每月一条）。用流而不是 FutureProvider：改了某月配置后汇总卡要立刻重算。
+final monthlyWageConfigsProvider = StreamProvider<Map<(int, int), double>>(
+    (ref) => ref.watch(appRepositoryProvider).watchMonthlyWageConfigs());
+
+/// 当前月的月薪配置（兼容旧 UI 接口）。
+final payrollConfigProvider = Provider<PayrollConfig>((ref) {
+  final configs = ref.watch(monthlyWageConfigsProvider).valueOrNull ??
+      const <(int, int), double>{};
+  final now = DateTime.now();
+  final wage = configs[(now.year, now.month)] ?? 0;
+  return PayrollConfig(monthlyWage: wage);
+});
 
 final payrollDayWagesProvider = StreamProvider<Map<int, double>>(
     (ref) => ref.watch(appRepositoryProvider).watchPayrollDayWages());

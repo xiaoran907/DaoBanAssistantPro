@@ -1,25 +1,60 @@
 // 薪资统计引擎 —— 纯 Dart，无 Flutter 依赖，可直接单测。
 //
-// 模型（用户 2026-10-23 改定，v0.12.3）：
-//   · **月薪**（包月制）：一个固定数，出勤天数不改变这笔钱；
+// 模型（用户 2026-10-24 改定，v0.13）：
+//   · **逐月月薪**：每月一条可编辑记录（「每个月可能月薪都不一样」），不再是全局固定数；
 //   · **单日加项**：加班 / 双倍工资那天单独加一笔（在月薪之外）；
+//   · **多条实发**：同一个月可以记多条实发记录（月中一次、月底一次）；
 //   · 出不出勤由排班链决定 —— 那天有班次且不是休班，就是出勤。
 //
-// 月应发 = 月薪 + 加项合计，**不存库**：改了排班（调班把班调走、换了班表）或
-// 改了加项，应发跟着变 —— 这份账本来就是「按表算出来的」，存一份快照只会多出
-// 一个会与现算打架的数字。人手记的只有实发（`payroll_record_rows`）。
+// 月应发 = 当月月薪 + 加项合计，**不存库**：改了排班或加项，应发跟着变。
+// 人手记的只有实发（`payroll_record_rows`），可多条。
 //
 // **T11 判据**：出勤 0 天的月，月薪不计入（`total == 0`）—— 凭空多出一个月薪数
-// 会跟用户认知对不上（没上班，HR 也不会发）。上 1 天班月薪仍全额，这才是包月制。
-// 旧引擎（v0.12.2 及以前）按「日薪 × 出勤天」累加，改排班会让历史月份的应发跟着
-// 变；包月制下这条自动消失，那是更对的行为。
+// 会跟用户认知对不上（没上班，HR 也不会发）。上 1 天班月薪仍全额。
 library;
 
 import '../core/l10n.dart';
 import 'schedule_chain.dart';
 import 'shift_rotation.dart';
 
-/// 薪资设置（库里的单例行翻出来的领域形态）。
+/// 逐月月薪配置（库里每月一条记录的领域形态）。
+///
+/// 用户 2026-10-24 拍板：不想要「全局月薪」一个固定数，而是「逐月灵活填」。
+class MonthlyWageConfig {
+  const MonthlyWageConfig({
+    required this.year,
+    required this.month,
+    this.wage = 0,
+    this.note,
+  });
+
+  final int year;
+
+  /// 1..12。
+  final int month;
+
+  /// 这个月的月薪（元）。0 = 没填。
+  final double wage;
+
+  /// 可选备注。
+  final String? note;
+
+  /// 0 = 用户还没配过这个月（统计页据此显示指路文案，而不是画 ¥0.00）。
+  bool get isUnset => wage == 0;
+
+  /// 唯一键：`(year, month)`。
+  (int, int) get key => (year, month);
+
+  /// 兼容旧接口：返回 [wage]（旧的 `monthlyWage` 字段已废弃）。
+  double get monthlyWage => wage;
+}
+
+/// 薪资设置（库里的单例行）。
+///
+/// **已废弃**（v0.13）：旧的「全局月薪」配置。用 [MonthlyWageConfig] 代替。
+/// 保留这个类是为了兼容旧 UI 代码（如 `stats_screen.dart`），但新的代码应直接用
+/// [MonthlyWageConfig]。
+@Deprecated('Use MonthlyWageConfig instead')
 class PayrollConfig {
   const PayrollConfig({this.monthlyWage = 0});
 
@@ -70,11 +105,10 @@ class MonthPay {
   /// 出勤天（按日期升序）。休班 / 无排班的天不在里面。
   final List<DayPay> days;
 
-  /// 按班次简称累加的出勤天数（休班不计）—— 与 `monthTallyFor` 同一条口径：
-  /// 按 `shortLabel` 累加而不是按 classes 下标，跨方案的同名班次本来就该合并。
+  /// 按班次简称累加的出勤天数（休班不计）。
   final Map<String, int> shiftCounts;
 
-  /// 这个月的月薪（从 [PayrollConfig.monthlyWage] 取，算 [total] 用）。
+  /// 这个月的月薪（从 [MonthlyWageConfig.wage] 取，算 [total] 用）。
   final double monthlyWage;
 
   int get workedDays => days.length;
@@ -90,18 +124,12 @@ class MonthPay {
 }
 
 /// 某天的钱；休班或那天没有任何排班返回 null（不进账）。
-///
-/// **出勤的判据只有一条**：`chain.shiftOn(day)` 给出非空且非休的班次。
-/// 「其余时间 = 无」又没有段覆盖的天、空白表没有班次的天、休班天，一律不算 ——
-/// 调班把班调走（请假）那天自动不发，把休班调成班（加班）那天自动发，都是
-/// 同一条判据带出来的，不需要（也不该有）第二套规则。
 DayPay? payForDay(
   ScheduleChain? chain,
   DateTime day,
   Map<int, double> dayExtras,
 ) {
   final shifts = chain?.shiftOn(day) ?? const [];
-  // 找第一个非休班（出勤判据）
   ShiftClass? workShift;
   for (final shift in shifts) {
     if (!shift.isRest) {
@@ -119,11 +147,13 @@ DayPay? payForDay(
   );
 }
 
-/// 算 [month]（任意指到该月内的一天即可）整月的账。
+/// 算 [month] 整月的账。
+///
+/// [monthlyWage] 从 [MonthlyWageConfig] 取（该月的月薪），不再是全局固定数。
 MonthPay computeMonthPay(
   ScheduleChain? chain,
   DateTime month,
-  PayrollConfig config,
+  double monthlyWage,
   Map<int, double> dayExtras,
 ) {
   final days = DateTime(month.year, month.month + 1, 0).day;
@@ -141,22 +171,22 @@ MonthPay computeMonthPay(
     month: month.month,
     days: pays,
     shiftCounts: counts,
-    monthlyWage: config.monthlyWage,
+    monthlyWage: monthlyWage,
   );
 }
 
-/// 算 [year] 一整年 12 个月的账（1 月在前的升序）。
+/// 算 [year] 一整年 12 个月的账。
 ///
-/// 366 次 `shiftOn` 是纯函数调用（微秒级），不必缓存；年度页与月度页各算各的，
-/// 谁也不依赖谁的缓存键。
+/// [monthlyWages] 的键是 `(year, month)`，值是该月的月薪；缺该月的配置时按 0 计。
 List<MonthPay> computeYearPay(
   ScheduleChain? chain,
   int year,
-  PayrollConfig config,
+  Map<(int, int), double> monthlyWages,
   Map<int, double> dayExtras,
 ) => [
       for (var m = 1; m <= 12; m++)
-        computeMonthPay(chain, DateTime(year, m, 1), config, dayExtras),
+        computeMonthPay(
+            chain, DateTime(year, m, 1), monthlyWages[(year, m)] ?? 0, dayExtras),
     ];
 
 /// 金额：两位小数 + 千分位。`¥` 符号由界面层拼（这里只管数）。
@@ -177,9 +207,6 @@ String formatMoney(double v) {
 String moneyText(double v) => '${L10n.currencySymbol}${formatMoney(v)}';
 
 /// 出勤天列表行的副标题：「加项 ¥320.00」。没设过加项时返回空串。
-///
-/// 文案放在这边而不是 `L10n`：金额格式化在这里，而 `l10n.dart` import 本文件
-/// 会成环（`day_summary.dart` 那批文案同一条路）。
 String dayPaySubtitleText(DayPay d) {
   if (!d.hasExtra) return '';
   return L10n.t(

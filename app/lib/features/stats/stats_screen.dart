@@ -83,11 +83,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     if (picked != null && mounted) _setMonth(picked);
   }
 
-  // ── 薪资设置（日薪 + 补助） ──────────────────────────────────────────
+  // ── 薪资设置（逐月月薪） ──────────────────────────────────────
 
-  Future<void> _showWageSettings(PayrollConfig config) async {
+  Future<void> _showWageSettings(MonthlyWageConfig config) async {
     final wageCtrl = TextEditingController(
-        text: config.monthlyWage == 0 ? '' : _plain(config.monthlyWage));
+        text: config.wage == 0 ? '' : _plain(config.wage));
     final saved = await showGlassDialog<bool>(
       context: context,
       builder: (dialogContext) => GlassDialog(
@@ -131,7 +131,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final wage = _parseAmount(wageText) ?? 0;
     await ref
         .read(appRepositoryProvider)
-        .setPayrollConfig(PayrollConfig(monthlyWage: wage));
+        .setMonthlyWageConfig(MonthlyWageConfig(
+          year: config.year,
+          month: config.month,
+          wage: wage,
+        ));
     Haptics.commit();
   }
 
@@ -164,6 +168,16 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 ],
                 decoration: glassInputDecoration(context),
               ),
+            ),
+            const SizedBox(height: AppTokens.spaceSm),
+            // 快捷按钮：加项 100（用户 2026-10-24 拍板 D2）。
+            GlassActionButton(
+              variant: GlassActionVariant.secondary,
+              onPressed: () {
+                ctrl.text = '100';
+                ctrl.selection = TextSelection.collapsed(offset: 3);
+              },
+              label: L10n.statsExtraQuick100,
             ),
             const SizedBox(height: AppTokens.spaceSm),
             Text(L10n.statsDayExtraHint,
@@ -304,7 +318,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final monthLabel = L10n.yearMonth(DateTime(year, month, 1));
     switch (action) {
       case 'clear':
-        await repo.deletePayrollRecord(year, month);
+        await repo.deletePayrollRecord(year, month, 0);
         if (mounted) {
           showGlassSnack(context, L10n.recordCleared(monthLabel),
               icon: Icons.delete_outline);
@@ -313,14 +327,15 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       case 'save':
         if (actual == null && (note == null || note.isEmpty)) {
           // 两样都空 = 没有可记的东西：当成清除，不留在库里一行空记录。
-          await repo.deletePayrollRecord(year, month);
+          await repo.deletePayrollRecord(year, month, 0);
           if (mounted) {
             showGlassSnack(context, L10n.recordCleared(monthLabel),
                 icon: Icons.delete_outline);
           }
         } else {
           await repo.savePayrollRecord(
-              year: year, month: month, actual: actual, note: note);
+              year: year, month: month, seq: 0,
+              actual: actual, note: note);
           if (mounted) {
             showGlassSnack(context, L10n.recordSaved(monthLabel),
                 icon: Icons.check_circle_outlined);
@@ -417,8 +432,14 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     final chain = ref.watch(activeScheduleProvider).valueOrNull?.chain;
-    final config =
-        ref.watch(payrollConfigProvider).valueOrNull ?? const PayrollConfig();
+    final monthlyWages =
+        ref.watch(monthlyWageConfigsProvider).valueOrNull ??
+            const <(int, int), double>{};
+    final config = MonthlyWageConfig(
+      year: _month.year,
+      month: _month.month,
+      wage: monthlyWages[(_month.year, _month.month)] ?? 0,
+    );
     final dayWages =
         ref.watch(payrollDayWagesProvider).valueOrNull ?? const <int, double>{};
     final records = ref.watch(payrollRecordsProvider).valueOrNull ??
@@ -491,7 +512,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   child: _buildYear(
                     context,
                     chain: chain,
-                    config: config,
+                    config: PayrollConfig(monthlyWage: config.wage),
                     dayWages: dayWages,
                     recordFor: recordFor,
                   ),
@@ -502,7 +523,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   child: _buildMonth(
                     context,
                     chain: chain,
-                    config: config,
+                    config: PayrollConfig(monthlyWage: config.wage),
                     dayWages: dayWages,
                     record: recordFor(_month.year, _month.month),
                   ),
@@ -523,7 +544,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     required Map<int, double> dayWages,
     required PayrollRecordRow? record,
   }) {
-    final pay = computeMonthPay(chain, _month, config, dayWages);
+    final pay = computeMonthPay(chain, _month, config.monthlyWage, dayWages);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -739,9 +760,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   }) {
     final muted = AppTokens.inkMuted(context);
     // 未设日薪时不白算 12 个月：年度表整个换成一句提示。
+    final monthlyWages = {
+      for (var m = 1; m <= 12; m++) (_year, m): config.monthlyWage,
+    };
     final months = config.isUnset
         ? null
-        : computeYearPay(chain, _year, config, dayWages);
+        : computeYearPay(chain, _year, monthlyWages, dayWages);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
