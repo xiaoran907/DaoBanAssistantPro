@@ -26,7 +26,7 @@ import '../../domain/shift_rotation.dart';
 /// v2（2026-09-20）：窗口从「今天起 14 天」改成「按月对齐的绝对窗口」；
 /// `days[]` 删 `abbrInk`、增 `lunarShort` / `lunarIsHoliday`；顶层增 `weekdays` / `months`。
 /// 换版本号是有意的：升级时旧快照一律解不开 → 渲染占位态，直到第一次 push。
-const int kWidgetSnapshotVersion = 2;
+const int kWidgetSnapshotVersion = 3;
 
 /// 窗口的**最大**天数。真正用多少由 [widgetWindow] 算：
 /// 「−3 ~ +3 个月」共七个月，各自按 31 天算 → 217，再加末端那 42 格多出来的 41 天
@@ -105,6 +105,9 @@ Map<String, Object?> buildWidgetSnapshot({
     final shiftList = chain?.shiftOn(date) ?? const [];
     final shift = shiftList.firstOrNull;
 
+    // v0.12.5：多胶囊堆叠。`shifts` 是日历格子要显示的所有时段胶囊（上限 3，超出折成「+N」）。
+    // 保留旧字段 `shiftAbbr` / `color` 等以兼容旧版桌面小组件。
+
     // 本地零点也是边界：跨天要翻页。
     final nextMidnight = DateTime(date.year, date.month, date.day + 1);
     if (nextMidnight.millisecondsSinceEpoch > nowMs) {
@@ -143,6 +146,12 @@ Map<String, Object?> buildWidgetSnapshot({
       'shiftName': shift?.name ?? '',
       'shiftAbbr': shift?.timeRangeText ?? '',
       'color': shift?.color ?? 0,
+      // v0.12.5：多胶囊堆叠。日历格子要显示的所有时段胶囊（上限 3）。
+      'shifts': shiftList.take(3).map((s) => {
+        return {'label': s.timeRangeText, 'color': s.color};
+      }).toList(),
+      // 超出 3 个的折叠数（原生侧用它画「+N」徽标）。
+      'shiftsOverflow': shiftList.length > 3 ? shiftList.length - 3 : 0,
       'timeRange': timeRange,
       // 月历格子的第三行。原生不查农历（那是 Dart 侧的事），所以按日期烘焙。
       //

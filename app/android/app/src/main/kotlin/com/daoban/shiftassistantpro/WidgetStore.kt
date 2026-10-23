@@ -29,6 +29,14 @@ object WidgetStore {
         val shiftName: String,
         val shiftAbbr: String,
         val color: Int,
+        /**
+         * v0.12.5：多胶囊堆叠。日历格子要显示的所有时段胶囊（上限 3）。
+         *
+         * 旧字段 [shiftAbbr] / [color] 保留以兼容旧版桌面小组件。
+         */
+        val shifts: List<ShiftItem>,
+        /** 超出 3 个的折叠数（原生侧用它画「+N」徽标）。 */
+        val shiftsOverflow: Int,
         /** 已是完整显示串（含「次日」/「(next day)」等语序）；无时间时为 null。 */
         val timeRange: String?,
         /**
@@ -48,6 +56,12 @@ object WidgetStore {
          * 原生只重渲染旧快照、不跑 Dart，它每天过零点就消失了。
          */
         val shiftNote: String?,
+    )
+
+    /** v0.12.5：多胶囊堆叠里的一个时段胶囊。 */
+    data class ShiftItem(
+        val label: String,
+        val color: Int,
     )
 
     /** 窗口覆盖到的某个月的标题（「2026年9月」/「September 2026」）。 */
@@ -241,7 +255,8 @@ object WidgetStore {
     internal fun parse(raw: String): Snapshot? {
         val o = JSONObject(raw)
         // 版本对不上就当作看不懂 —— 比按老结构硬解出半份错数据强。
-        if (o.optInt("v", -1) != 2) return null
+        // v0.12.5：多胶囊堆叠，协议版本升到 3。
+        if (o.optInt("v", -1) != 3) return null
 
         val labels = o.optJSONObject("labels") ?: JSONObject()
         val arr = o.optJSONArray("days") ?: JSONArray()
@@ -256,6 +271,18 @@ object WidgetStore {
                 shiftName = d.optString("shiftName", ""),
                 shiftAbbr = d.optString("shiftAbbr", ""),
                 color = d.optInt("color", 0),
+                // v0.12.5：多胶囊堆叠。上限 3，超出折成「+N」。
+                shifts = run {
+                    val sArr = d.optJSONArray("shifts") ?: JSONArray()
+                    (0 until sArr.length()).mapNotNull { i ->
+                        val s = sArr.optJSONObject(i) ?: return@mapNotNull null
+                        ShiftItem(
+                            label = s.optString("label", ""),
+                            color = s.optInt("color", 0),
+                        )
+                    }
+                },
+                shiftsOverflow = d.optInt("shiftsOverflow", 0),
                 // ⚠️ 不能写 `d.optString("timeRange", "").ifEmpty { null }`：
                 // `optString(name, fallback)` 只在**键不存在**时才给 fallback；
                 // 键存在而值是 JSON `null` 时，它走 `JSON.toString(JSONObject.NULL)`
