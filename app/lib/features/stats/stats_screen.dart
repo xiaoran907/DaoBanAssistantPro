@@ -87,9 +87,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
 
   Future<void> _showWageSettings(PayrollConfig config) async {
     final wageCtrl = TextEditingController(
-        text: config.dailyWage == 0 ? '' : _plain(config.dailyWage));
-    final subsidyCtrl = TextEditingController(
-        text: config.dailySubsidy == 0 ? '' : _plain(config.dailySubsidy));
+        text: config.monthlyWage == 0 ? '' : _plain(config.monthlyWage));
     final saved = await showGlassDialog<bool>(
       context: context,
       builder: (dialogContext) => GlassDialog(
@@ -99,22 +97,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             GlassField(
-              label: L10n.statsDailyWage,
+              label: L10n.statsMonthlyWage,
               child: TextField(
                 controller: wageCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'^[\d.,]+$')),
-                ],
-                decoration: glassInputDecoration(context),
-              ),
-            ),
-            const SizedBox(height: AppTokens.spaceMd),
-            GlassField(
-              label: L10n.statsDailySubsidy,
-              child: TextField(
-                controller: subsidyCtrl,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
@@ -139,30 +124,27 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       ),
     );
     final wageText = wageCtrl.text;
-    final subsidyText = subsidyCtrl.text;
     // 控制器**不 dispose**：弹层退场动画里 TextField 还会再读一次，提前
     // dispose 会抛「A TextEditingController was used after being disposed」
     // （schedule_editor_screen 的 _saveAsTemplate 同一条约定）。
     if (saved != true || !mounted) return;
     final wage = _parseAmount(wageText) ?? 0;
-    final subsidy = _parseAmount(subsidyText) ?? 0;
     await ref
         .read(appRepositoryProvider)
-        .setPayrollConfig(
-            PayrollConfig(dailyWage: wage, dailySubsidy: subsidy));
+        .setPayrollConfig(PayrollConfig(monthlyWage: wage));
     Haptics.commit();
   }
 
-  // ── 当天日薪 ────────────────────────────────────────────────────
+  // ── 当天加项 ────────────────────────────────────────────────────
 
-  /// 弹层的三种去向：保存（value 可为 null = 回退固定日薪）/ 清除自定义 / 取消。
+  /// 弹层的三种去向：保存（value 可为 null = 清除加项）/ 清除自定义 / 取消。
   Future<void> _showDayWageDialog(DayPay pay) async {
-    final ctrl = TextEditingController(text: _plain(pay.wage));
-    final hasCustom = pay.customWage;
+    final ctrl = TextEditingController(text: _plain(pay.extra));
+    final hasCustom = pay.hasExtra;
     final result = await showGlassDialog<(String, double?)>(
       context: context,
       builder: (dialogContext) => GlassDialog(
-        title: L10n.dayWageDialogTitle(pay.date),
+        title: L10n.dayExtraDialogTitle(pay.date),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,7 +154,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     .copyWith(color: AppTokens.inkMuted(context))),
             const SizedBox(height: AppTokens.spaceMd),
             GlassField(
-              label: L10n.statsDayWageField,
+              label: L10n.statsDayExtraField,
               child: TextField(
                 controller: ctrl,
                 keyboardType:
@@ -184,7 +166,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               ),
             ),
             const SizedBox(height: AppTokens.spaceSm),
-            Text(L10n.statsDayWageHint,
+            Text(L10n.statsDayExtraHint,
                 style: AppTokens.microText
                     .copyWith(color: AppTokens.inkMuted(context))),
           ],
@@ -195,7 +177,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             GlassActionButton(
               variant: GlassActionVariant.danger,
               onPressed: () => Navigator.pop(dialogContext, ('clear', null)),
-              label: L10n.statsClearCustomWage,
+              label: L10n.statsClearExtra,
             ),
           const SizedBox(width: 8),
           GlassActionButton(
@@ -222,7 +204,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       case 'clear':
         await repo.clearPayrollDayWage(pay.date);
         if (mounted) {
-          showGlassSnack(context, L10n.dayWageCleared(1),
+          showGlassSnack(context, L10n.dayExtraCleared(1),
               icon: Icons.restart_alt_outlined);
         }
         Haptics.commit();
@@ -231,13 +213,13 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           // 输入框留空保存 = 回退到固定日薪（与「清除自定义」同一语义）。
           await repo.clearPayrollDayWage(pay.date);
           if (mounted) {
-            showGlassSnack(context, L10n.dayWageCleared(1),
+            showGlassSnack(context, L10n.dayExtraCleared(1),
                 icon: Icons.restart_alt_outlined);
           }
         } else if (value != null) {
           await repo.setPayrollDayWage(pay.date, value);
           if (mounted) {
-            showGlassSnack(context, L10n.customWageSet,
+            showGlassSnack(context, L10n.extraSet,
                 icon: Icons.check_circle_outlined);
           }
         } else if (mounted) {
@@ -460,7 +442,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(L10n.titleStats, style: AppTokens.pageTitle),
+                    child: Text(L10n.navSalary, style: AppTokens.pageTitle),
                   ),
                   const SizedBox(width: AppTokens.spaceSm),
                   GlassPill(
@@ -613,11 +595,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                         child: _statCell(
                             context, L10n.workedDaysCount(pay.workedDays))),
                     Expanded(
-                        child: _statCell(context, L10n.statsWageTotal,
-                            moneyText(pay.wageTotal))),
+                        child: _statCell(context, L10n.statsExtraTotal,
+                            moneyText(pay.extraTotal))),
                     Expanded(
-                        child: _statCell(context, L10n.statsSubsidyTotal,
-                            moneyText(pay.subsidyTotal))),
+                        child: _statCell(context, L10n.statsMonthlyWage,
+                            moneyText(pay.monthlyWage))),
                   ],
                 ),
                 if (pay.shiftCounts.isNotEmpty) ...[
@@ -728,7 +710,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           [
             pay.shift.name,
             dayPaySubtitleText(pay),
-            if (pay.customWage) L10n.statsCustomWageBadge,
+            if (pay.hasExtra) L10n.statsExtraBadge,
           ].join(' · '),
           maxLines: 2,
           style: AppTokens.rowSecondary.copyWith(color: muted),
@@ -736,7 +718,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         trailing: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            moneyText(pay.total),
+            moneyText(pay.extra),
             maxLines: 1,
             style: AppTokens.labelStrong,
           ),

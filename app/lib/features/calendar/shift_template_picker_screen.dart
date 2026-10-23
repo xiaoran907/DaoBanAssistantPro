@@ -242,7 +242,7 @@ class _ShiftTemplatePickerScreenState
     required String title,
     required String subtitle,
     required List<ShiftClass> classes,
-    required List<int> cycle,
+    required List<List<int>> cycle,
     // null = 这一档对**这套排法**不适用，整行不出现。按月排班就是这种：
     // 它的段长短随月份变，「每天在岗几个班组」没有单一答案（而且那张起步卡片
     // 的班次是借四班两倒的，算出来的数本身就是借来的副产物 —— 用户 2026-10-13
@@ -341,7 +341,7 @@ class _ShiftTemplatePickerScreenState
         // 色条画的是「一段一个色块」/「一天一个色块」—— 两种模式各画各的。
         // 按月模板的 `cycle` 是空的，照搬会画出一条空色条。
         cycle: t.monthly
-            ? [for (final s in t.monthlySegments) s.classIndex]
+            ? [for (final s in t.monthlySegments) [s.classIndex]]
             : t.cycle,
         // 按月模板同样不写「每天在岗几个班组」—— 理由与 `_monthlyCard` 同一处。
         workingTeamsPerDay: t.monthly ? null : t.workingTeamsPerDay,
@@ -376,7 +376,7 @@ class _ShiftTemplatePickerScreenState
       title: L10n.monthlyPattern,
       subtitle: L10n.monthlyPatternHint,
       classes: starter.classes,
-      cycle: [for (final s in starter.monthlySegments) s.classIndex],
+      cycle: [for (final s in starter.monthlySegments) [s.classIndex]],
       // 不写「每天在岗几个班组」：段的长短随月份变，这个数没有单一答案；
       // 而这张起步卡片的班次是借四班两倒的，算出来那个「2」只是借来的副产物。
       workingTeamsPerDay: null,
@@ -568,12 +568,15 @@ class _ShiftTemplatePickerScreenState
 /// 同上，但收班次定义与周期本身 —— 「我的模板」（`ScheduleTemplate`）也走它，
 /// 免得同一套画法为两种数据各写一遍。
 ({List<int> colors, bool truncated}) cycleStripPlanOf(
-    List<ShiftClass> classes, List<int> cycle) {
+    List<ShiftClass> classes, List<List<int>> cycle) {
   const maxSlots = 14; // 7 列 × 2 行
   final truncated = cycle.length > maxSlots;
   final visible = truncated ? maxSlots - 1 : cycle.length;
   return (
-    colors: [for (var i = 0; i < visible; i++) classes[cycle[i]].color],
+    colors: [
+      for (var i = 0; i < visible; i++)
+        if (cycle[i].isNotEmpty) classes[cycle[i].first].color
+    ],
     truncated: truncated,
   );
 }
@@ -596,7 +599,7 @@ const double _cycleStripWidth =
 const double _chevronWidth = 24;
 
 Widget _cycleStrip(BuildContext context,
-    {required List<ShiftClass> classes, required List<int> cycle}) {
+    {required List<ShiftClass> classes, required List<List<int>> cycle}) {
   const dot = _stripDot;
   const spacing = _stripSpacing;
   final muted = AppTokens.inkMuted(context);

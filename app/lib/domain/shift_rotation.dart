@@ -161,6 +161,64 @@ bool _sameAlarms(List<ShiftAlarm> a, List<ShiftAlarm> b) {
   return true;
 }
 
+/// 两个时段列表逐条相等（同 [_sameAlarms] 那一条理由）。
+bool _sameSegments(List<ShiftSegment> a, List<ShiftSegment> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// 一段工作时间（分钟自午夜）。
+///
+/// 库里以 `'600-720,1200-1320'` 这样的字符串存（`shift_class_rows.extra_segments`），
+/// 领域层按 [ShiftSegment] 读。[startMinute] / [endMinute] 允许 ≥ 1440
+/// （跨过午夜后继续累加，与 [ShiftClass.endMinute] 同一条口径）。
+///
+/// 值类型：没有身份（没有按段覆盖、没有按段排闹钟），所以按值相等。
+class ShiftSegment {
+  const ShiftSegment(this.startMinute, this.endMinute);
+
+  final int startMinute;
+  final int endMinute;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShiftSegment &&
+      other.startMinute == startMinute &&
+      other.endMinute == endMinute;
+
+  @override
+  int get hashCode => Object.hash(startMinute, endMinute);
+
+  @override
+  String toString() => 'ShiftSegment($startMinute-$endMinute)';
+}
+
+/// `'600-720,1200-1320'` → 时段列表；空串 = 没有额外时段。
+///
+/// 容错：解析不出来的分段直接丢弃，而不是让整个班次读不出来 —— 库里那一条用户
+/// 自己也能改到（备份导入、手工改库），崩掉整张日历比丢掉一段时段严重得多。
+List<ShiftSegment> parseShiftSegments(String raw) {
+  final segments = <ShiftSegment>[];
+  for (final part in raw.split(',')) {
+    final text = part.trim();
+    final dash = text.indexOf('-');
+    if (dash <= 0 || dash == text.length - 1) continue;
+    final start = int.tryParse(text.substring(0, dash));
+    final end = int.tryParse(text.substring(dash + 1));
+    if (start == null || end == null) continue;
+    segments.add(ShiftSegment(start, end));
+  }
+  return segments;
+}
+
+/// [parseShiftSegments] 的反向（存库时写的那条字符串）。
+String encodeShiftSegments(Iterable<ShiftSegment> segments) =>
+    segments.map((s) => '${s.startMinute}-${s.endMinute}').join(',');
+
 /// 班次定义：一个班次只定义一次，周期里的每一天引用它。
 class ShiftClass {
   const ShiftClass({
@@ -173,6 +231,7 @@ class ShiftClass {
     this.color = 0xFF5B7FFF,
     this.alarmEnabled = false,
     this.alarms = const [],
+    this.extraSegments = const [],
   });
 
   /// 库里的行 id；null = 还没落库的新班次。
@@ -211,6 +270,12 @@ class ShiftClass {
   /// 先跑），但**重排本身绝不能重新编号**。上限 [maxAlarmsPerShift]。
   final List<ShiftAlarm> alarms;
 
+  /// 额外时段（多时段班次）：除了主时段之外还上的那几段。
+  ///
+  /// 主时段仍在 [startMinute]/[endMinute] 上 —— 那两列是闹钟锚点与班次标签的
+  /// 依据，合并进这个列表就看不出「哪一段是锚」。
+  final List<ShiftSegment> extraSegments;
+
   /// 工作窗口是否跨过午夜。
   bool get crossesMidnight {
     final s = startMinute, e = endMinute;
@@ -228,6 +293,15 @@ class ShiftClass {
     return e >= 1440 || e < s;
   }
 
+  /// 主时段 + 额外时段（主时段为空时只有额外的）。
+  List<ShiftSegment> get allSegments {
+    final s = startMinute, e = endMinute;
+    return [
+      if (s != null && e != null) ShiftSegment(s, e),
+      ...extraSegments,
+    ];
+  }
+
   /// 日历格子显示的简称：优先用 [abbr]，为空时按名称推断。
   ///
   /// 用 `characters.first`（整字素簇）而不是 `substring(0, 1)`：
@@ -241,6 +315,20 @@ class ShiftClass {
     return name.isEmpty ? '·' : name.characters.first;
   }
 
+  /// 日历格子显示的时间段文本（v0.12.3）：「22-06」格式。
+  ///
+  /// 跨天班次不写「次日」—— 直接显示起止小时（如 22:00 到次日 06:00 → "22-06"）。
+  /// `startMinute` / [endMinute] 为 null 时退回 [shortLabel]。
+  ///
+  /// 按天统计行仍用 [shortLabel]（那里要按简称累加天数，语义不同）。
+  String get timeRangeText {
+    final s = startMinute, e = endMinute;
+    if (s == null || e == null) return shortLabel;
+    final startH = (s ~/ 60).toString().padLeft(2, '0');
+    final endH = ((e % 1440) ~/ 60).toString().padLeft(2, '0');
+    return '$startH-$endH';
+  }
+
   ShiftClass copyWith({
     int? id,
     String? name,
@@ -251,6 +339,7 @@ class ShiftClass {
     int? color,
     bool? alarmEnabled,
     List<ShiftAlarm>? alarms,
+    List<ShiftSegment>? extraSegments,
   }) {
     return ShiftClass(
       id: id ?? this.id,
@@ -262,6 +351,7 @@ class ShiftClass {
       color: color ?? this.color,
       alarmEnabled: alarmEnabled ?? this.alarmEnabled,
       alarms: alarms ?? this.alarms,
+      extraSegments: extraSegments ?? this.extraSegments,
     );
   }
 
@@ -276,11 +366,13 @@ class ShiftClass {
       other.isRest == isRest &&
       other.color == color &&
       other.alarmEnabled == alarmEnabled &&
-      _sameAlarms(other.alarms, alarms);
+      _sameAlarms(other.alarms, alarms) &&
+      _sameSegments(other.extraSegments, extraSegments);
 
   @override
   int get hashCode => Object.hash(id, name, abbr, startMinute, endMinute,
-      isRest, color, alarmEnabled, Object.hashAll(alarms));
+      isRest, color, alarmEnabled, Object.hashAll(alarms),
+      Object.hashAll(extraSegments));
 
   @override
   String toString() => 'ShiftClass($name, rest=$isRest)';
@@ -293,8 +385,8 @@ class ShiftClass {
 /// `AlarmService.reschedule` 从前收的是 `ShiftSchedule`，改成收这个接口之后
 /// 传哪一边都对，而调用点拿到的就是「一个能回答某天什么班的东西」。
 abstract class ShiftSource {
-  /// 某天的班次；那天没有班次（空白表 / 无方案）返回 null。
-  ShiftClass? shiftOn(DateTime date);
+  /// 某天的班次列表；那天没有班次（空白表 / 无方案）返回空列表。
+  List<ShiftClass> shiftOn(DateTime date);
 
   /// 日志用的一行描述。**不是用户可见文案**（Kotlin 的日志串本来就是中文，
   /// 仓库既有惯例）。
@@ -334,7 +426,7 @@ class ShiftSchedule implements ShiftSource {
   ///
   /// 不能写成「两边都空」也不能只看 `cycle`：按月模式下周期本来就是空的，那样
   /// 每一套按月方案都会被当成空白表 —— 日历整月不画胶囊、桌面小组件写「还没有排班」。
-  bool get isBlank => monthly ? monthlySegments.isEmpty : cycle.isEmpty;
+  bool get isBlank => monthly ? monthlySegments.isEmpty : cycle.any((d) => d.isEmpty);
 
   final String name;
 
@@ -347,11 +439,11 @@ class ShiftSchedule implements ShiftSource {
   /// 班次定义。
   final List<ShiftClass> classes;
 
-  /// 周期序列：长度即周期，元素是 [classes] 的下标。
+  /// 周期序列：长度即周期，元素是该天的班次下标列表（多选）。
   ///
   /// **按月模式下不读它**（见 [monthly]）。切换模式时两边各存各的，所以它不会
   /// 因为切到按月就被清掉。
-  final List<int> cycle;
+  final List<List<int>> cycle;
 
   /// 按月切法：一段 = 「每月的第 N 天起 → 某个班次」，第一段恒从 1 起。
   ///
@@ -405,45 +497,47 @@ class ShiftSchedule implements ShiftSource {
   /// 轮转，别人的班不会被我的调整改掉。
   ///
   /// 覆盖下标越界（班次被删、历史脏数据）时**回退到轮转**，不抛异常。
-  /// 空白表（无周期）仍返回 null，覆盖不改变这一点。
+  /// 空白表（无周期）仍返回空列表，覆盖不改变这一点。
   @override
-  ShiftClass? shiftOn(DateTime date) {
+  List<ShiftClass> shiftOn(DateTime date) {
     final ov = dayOverrides[dayNumber(date)];
-    if (ov != null && ov >= 0 && ov < classes.length) return classes[ov];
+    if (ov != null && ov >= 0 && ov < classes.length) return [classes[ov]];
     return teamShift(ourTeamIndex, date);
   }
 
-  /// 指定班组在某天的班次；那天没有班次（空白表 / 无方案）返回 null。
+  /// 指定班组在某天的班次；那天没有班次（空白表 / 无方案）返回空列表。
   ///
   /// **判据是 [monthly] 这个标志，不是「段表空不空」**（见类文档）。
-  ShiftClass? teamShift(int teamIndex, DateTime date) {
+  List<ShiftClass> teamShift(int teamIndex, DateTime date) {
     if (monthly) {
       final n = monthlySegments.length;
-      if (n == 0) return null; // 半配置 / 空白表：与「周期为空」同一条路
+      if (n == 0) return []; // 半配置 / 空白表：与「周期为空」同一条路
       final off = (teamIndex >= 0 && teamIndex < teamSegOffsets.length)
           ? teamSegOffsets[teamIndex]
           : teamIndex - ourTeamIndex; // 回退：与 teamOffsets 那条同一条纪律
       final classIndex =
           monthlyClassIndexOn(monthlySegments, dayOfMonth(date), off);
-      // 越界只有一条出路：返回 null。按月模式下**没有周期可以退**，所以这里
+      // 越界只有一条出路：返回空列表。按月模式下**没有周期可以退**，所以这里
       // 不能写成「回退到轮转」—— 那句话在周期模式里成立、写在这里是句空话。
       if (classIndex == null ||
           classIndex < 0 ||
           classIndex >= classes.length) {
-        return null;
+        return [];
       }
-      return classes[classIndex];
+      return [classes[classIndex]];
     }
-    if (cycle.isEmpty) return null;
+    if (cycle.isEmpty) return [];
     final base = (teamIndex >= 0 && teamIndex < teamOffsets.length)
         ? teamOffsets[teamIndex]
         : teamIndex - ourTeamIndex; // 回退：旧的按班组错开
     final offset = daysBetween(anchorDate, date) + base;
     var idx = offset % cycleLength;
     if (idx < 0) idx += cycleLength;
-    final classIndex = cycle[idx];
-    if (classIndex < 0 || classIndex >= classes.length) return null;
-    return classes[classIndex];
+    final result = <ShiftClass>[];
+    for (final ci in cycle[idx]) {
+      if (ci >= 0 && ci < classes.length) result.add(classes[ci]);
+    }
+    return result;
   }
 }
 
@@ -491,27 +585,37 @@ List<CrewClash> crewClashes(ShiftSchedule s) {
   final out = <CrewClash>[];
   for (var k = 0; k < s.cycleLength; k++) {
     final date = s.anchorDate.add(Duration(days: k));
-    final working = <int, ShiftClass>{};
+    final working = <int, List<ShiftClass>>{};
     for (var t = 0; t < s.teamCount; t++) {
-      final sc = s.teamShift(t, date);
-      if (sc == null || sc.isRest) continue;
-      working[t] = sc;
+      final shifts = s.teamShift(t, date).where((sc) => !sc.isRest).toList();
+      if (shifts.isEmpty) continue;
+      working[t] = shifts;
     }
     final teams = working.keys.toList()..sort();
     for (var i = 0; i < teams.length; i++) {
       for (var j = i + 1; j < teams.length; j++) {
-        if (identical(working[teams[i]], working[teams[j]])) {
+        final clashShift = _findClashShift(working[teams[i]]!, working[teams[j]]!);
+        if (clashShift != null) {
           out.add(CrewClash(
             cycleDay: k + 1,
             teamA: teams[i],
             teamB: teams[j],
-            shift: working[teams[i]]!,
+            shift: clashShift,
           ));
         }
       }
     }
   }
   return out;
+}
+
+ShiftClass? _findClashShift(List<ShiftClass> a, List<ShiftClass> b) {
+  for (final sa in a) {
+    for (final sb in b) {
+      if (identical(sa, sb)) return sa;
+    }
+  }
+  return null;
 }
 
 /// 按月模式的撞班扫描。
@@ -530,22 +634,23 @@ List<CrewClash> _monthlyCrewClashes(ShiftSchedule s) {
   var day = DateTime.utc(2020, 1, 1); // 闰年，保证 2/29 会出现
   for (var i = 0; i < 1461; i++) {
     final dom = day.day;
-    final working = <int, ShiftClass>{};
+    final working = <int, List<ShiftClass>>{};
     for (var t = 0; t < s.teamCount; t++) {
-      final sc = s.teamShift(t, day);
-      if (sc == null || sc.isRest) continue;
-      working[t] = sc;
+      final shifts = s.teamShift(t, day).where((sc) => !sc.isRest).toList();
+      if (shifts.isEmpty) continue;
+      working[t] = shifts;
     }
     final teams = working.keys.toList()..sort();
     for (var a = 0; a < teams.length; a++) {
       for (var b = a + 1; b < teams.length; b++) {
-        if (!identical(working[teams[a]], working[teams[b]])) continue;
+        final clashShift = _findClashShift(working[teams[a]]!, working[teams[b]]!);
+        if (clashShift == null) continue;
         if (!seen.add((dom, teams[a], teams[b]))) continue;
         out.add(CrewClash(
           cycleDay: dom,
           teamA: teams[a],
           teamB: teams[b],
-          shift: working[teams[a]]!,
+          shift: clashShift,
         ));
       }
     }
@@ -601,7 +706,7 @@ ShiftSchedule defaultSchedule() {
     teamNames: L10n.defaultTeamNames(4),
     ourTeamIndex: 0,
     teamOffsets: const [0, 1, 2, 3],
-    cycle: const [0, 1, 2, 3],
+    cycle: const [[0], [1], [2], [3]],
     classes: [
       ShiftClass(
         name: L10n.t('白班', 'Day shift'),

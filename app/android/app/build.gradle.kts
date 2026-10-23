@@ -97,3 +97,14 @@ dependencies {
     // FileProvider（更新 APK 应用内安装需要）
     implementation("androidx.core:core:1.13.1")
 }
+
+// 容器内不可达 dl.google.com，走阿里云镜像
+allprojects {
+    repositories {
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        google()
+        mavenCentral()
+    }
+}

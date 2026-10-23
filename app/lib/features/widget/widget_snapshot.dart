@@ -82,6 +82,8 @@ Map<String, Object?> buildWidgetSnapshot({
   /// 今日**未完成**待办数。今日卡片上那个「N 项待办」徽章用它。
   /// 快照拿不到待办数据（那是 Drift 里的事），所以由调用方数好传进来。
   required int todayTodoCount,
+  /// 显示农历：true=日历格子与桌面小组件显示农历（默认），false=不显示。
+  bool showLunarDay = true,
 }) {
   final today = dateOnly(now);
   final nowMs = now.millisecondsSinceEpoch;
@@ -100,7 +102,8 @@ Map<String, Object?> buildWidgetSnapshot({
     // 真值：空白表（跟随法定节假日）没有班次定义，这里就是 null —— 卡片上那格
     // 只画日期与农历，**不替它断言今天上不上班**（v0.9.16 用户反馈）。
     // 「这一天有没有班表在管」是另一件事，见顶层 `hasSchedule`。
-    final shift = chain?.shiftOn(date);
+    final shiftList = chain?.shiftOn(date) ?? const [];
+    final shift = shiftList.firstOrNull;
 
     // 本地零点也是边界：跨天要翻页。
     final nextMidnight = DateTime(date.year, date.month, date.day + 1);
@@ -138,7 +141,7 @@ Map<String, Object?> buildWidgetSnapshot({
       'hasShift': shift != null,
       'isRest': shift?.isRest ?? true,
       'shiftName': shift?.name ?? '',
-      'shiftAbbr': shift?.shortLabel ?? '',
+      'shiftAbbr': shift?.timeRangeText ?? '',
       'color': shift?.color ?? 0,
       'timeRange': timeRange,
       // 月历格子的第三行。原生不查农历（那是 Dart 侧的事），所以按日期烘焙。
@@ -176,7 +179,8 @@ Map<String, Object?> buildWidgetSnapshot({
   if (todaySchedule != null && !todaySchedule.isBlank) {
     for (var i = 0; i < todaySchedule.teamCount; i++) {
       if (i == todaySchedule.ourTeamIndex) continue; // 只看别人
-      final t = todaySchedule.teamShift(i, todayDate);
+      final tList = todaySchedule.teamShift(i, todayDate);
+      final t = tList.firstOrNull;
       if (t == null) continue;
       final name = i < todaySchedule.teamNames.length
           ? todaySchedule.teamNames[i]
@@ -189,9 +193,9 @@ Map<String, Object?> buildWidgetSnapshot({
   }
   final todayCard = {
     'day': dayNumber(todayDate),
-    'lunarShort': lunar.shortLabel,
+    'lunarShort': showLunarDay ? lunar.shortLabel : '',
     'lunarIsHoliday': lunar.isLegalHoliday,
-    'lunarFull': lunar.fullDescription,
+    'lunarFull': showLunarDay ? lunar.fullDescription : '',
     'adjusted':
         todaySchedule?.dayOverrides.containsKey(dayNumber(todayDate)) ?? false,
     'todoCount': todayTodoCount,

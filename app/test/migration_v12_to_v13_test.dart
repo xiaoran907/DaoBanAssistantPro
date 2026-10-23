@@ -47,6 +47,25 @@ CREATE TABLE custom_templates (
 )
 ''';
 
+/// 班次定义表（v6 建的那张）。fixture 只建「迁移分支会碰到的表」，而 v15 那段会
+/// `addColumn shift_class_rows.extra_segments` —— 真实 v12 库一定有它，fixture
+/// 就得有（同上 `custom_templates` 的那一条）。**故意不带** `extra_segments`
+/// ：那一列正是这条迁移要加上去的。
+const _v12ShiftClassTable = '''
+CREATE TABLE shift_class_rows (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  schedule_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  abbr TEXT,
+  start_minute INTEGER,
+  end_minute INTEGER,
+  is_rest INTEGER NOT NULL DEFAULT 0,
+  color INTEGER NOT NULL DEFAULT 4284186623,
+  alarm_enabled INTEGER NOT NULL DEFAULT 0
+)
+''';
+
 /// 开一个 v12 库并种方案 —— **列表顺序就是 id 顺序**（第一个 id = 1）。
 ///
 /// 元组是 `(名字, 起, 止, 是不是其余时间)`，`null` 表示那一端留空。
@@ -55,6 +74,7 @@ Future<AppDatabase> _openV12(
   final raw = sqlite3.sqlite3.openInMemory();
   raw.execute(_v12ScheduleTable);
   raw.execute(_v12CustomTemplates);
+  raw.execute(_v12ShiftClassTable);
   for (final (name, from, to, current) in rows) {
     raw.execute(
       'INSERT INTO shift_schedule_rows '

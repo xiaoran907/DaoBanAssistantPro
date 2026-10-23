@@ -1,10 +1,10 @@
 // app/test/payroll_engine_test.dart
 //
-// 薪资引擎（domain/payroll.dart）的口径：
+// 薪资引擎（domain/payroll.dart）的口径（v0.12.3 包月制）：
 //  ① 出勤的判据只有一条 —— 那天有非休班次；调班把班调走 → 不计钱，
 //     把休班调成班 → 计钱，同一条判据带出来；
-//  ② 日薪 = 当天单独设过用那笔，否则固定日薪；
-//  ③ 补助按出勤天、全局一笔，休班 / 无排班的天一分没有；
+//  ② 月薪是月度常量：出勤 ≥ 1 天全额计入，出勤 0 天一分不计（T11 判据）；
+//  ③ 单日加项在月薪之外单独加一笔（加班 / 双倍工资那天），不按天数摊；
 //  ④ 跨时段（多套班表按日期衔接）的月份逐天问链，不认「当前方案」。
 //
 // 默认方案（`defaultSchedule()`）是四班两倒：锚点 **2025-01-06** 白班，
@@ -26,68 +26,57 @@ void main() {
   ShiftSchedule fourShift() => defaultSchedule();
 
   group('payForDay', () {
-    test('白班计钱、下夜班 / 大休与无排班的天不计', () {
+    test('白班计入账、下夜班 / 大休与无排班的天不进账', () {
       final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320, dailySubsidy: 10);
 
       // 2025-01-06 白班（锚点当天）、2025-01-07 上夜班。
-      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), config, const {});
+      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), const {});
       expect(pay, isNotNull);
-      expect(pay!.wage, 320);
-      expect(pay.subsidy, 10);
-      expect(pay.total, 330);
-      expect(pay.customWage, isFalse);
+      expect(pay!.extra, 0);
+      expect(pay.hasExtra, isFalse);
       expect(pay.shift.name, '白班');
-      expect(payForDay(chain, DateTime.utc(2025, 1, 7), config, const {}),
-          isNotNull);
+      expect(payForDay(chain, DateTime.utc(2025, 1, 7), const {}), isNotNull);
 
       // 下夜班（1/8）与大休（1/9）都标着 isRest。
-      expect(payForDay(chain, DateTime.utc(2025, 1, 8), config, const {}),
-          isNull);
-      expect(payForDay(chain, DateTime.utc(2025, 1, 9), config, const {}),
-          isNull);
+      expect(payForDay(chain, DateTime.utc(2025, 1, 8), const {}), isNull);
+      expect(payForDay(chain, DateTime.utc(2025, 1, 9), const {}), isNull);
     });
 
-    test('「其余时间 = 无」且没有段覆盖的天：无班次 → 不计钱', () {
+    test('「其余时间 = 无」且没有段覆盖的天：无班次 → 不进账', () {
       // 没有任何方案兜底的空链。
       const chain = ScheduleChain();
-      const config = PayrollConfig(dailyWage: 320);
-      expect(payForDay(chain, DateTime.utc(2025, 1, 6), config, const {}),
-          isNull);
+      expect(payForDay(chain, DateTime.utc(2025, 1, 6), const {}), isNull);
     });
 
-    test('单独设过的天用那笔钱，并带 customWage 标记', () {
+    test('设过加项的天带 extra + hasExtra 标记', () {
       final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320, dailySubsidy: 10);
-      final wages = {dayNumber(DateTime.utc(2025, 1, 6)): 640.0};
+      final extras = {dayNumber(DateTime.utc(2025, 1, 6)): 640.0};
 
-      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), config, wages);
-      expect(pay!.wage, 640);
-      expect(pay.customWage, isTrue);
-      // 补助照发，不跟着日薪覆盖走。
-      expect(pay.subsidy, 10);
+      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), extras);
+      expect(pay!.extra, 640);
+      expect(pay.hasExtra, isTrue);
     });
 
-    test('休班天即使设了钱也不发（出勤判据说了算）', () {
+    test('休班天即使设了加项也不发（出勤判据说了算）', () {
       final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320);
-      final wages = {dayNumber(DateTime.utc(2025, 1, 9)): 500.0};
-      expect(payForDay(chain, DateTime.utc(2025, 1, 9), config, wages), isNull);
+      final extras = {dayNumber(DateTime.utc(2025, 1, 9)): 500.0};
+      expect(payForDay(chain, DateTime.utc(2025, 1, 9), extras), isNull);
     });
   });
 
   group('computeMonthPay', () {
-    test('整月：出勤天数、两笔合计与按班次累加', () {
+    test('整月：出勤天数、月薪全额计入、按班次累加（无加项）', () {
       final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320, dailySubsidy: 10);
+      const config = PayrollConfig(monthlyWage: 8000);
       final month =
           computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
 
       // 2025-01：白班 8、上夜班 8、下夜班 7（不计）、大休 8（不计）。
       expect(month.workedDays, 16);
-      expect(month.wageTotal, closeTo(16 * 320, 0.001));
-      expect(month.subsidyTotal, closeTo(16 * 10, 0.001));
-      expect(month.total, closeTo(16 * 330, 0.001));
+      expect(month.monthlyWage, 8000);
+      expect(month.extraTotal, 0);
+      // 出勤 ≥ 1 天 → 月薪全额计入，加项 0。
+      expect(month.total, closeTo(8000, 0.001));
       expect(month.shiftCounts['白'], 8);
       expect(month.shiftCounts['夜'], 8);
       // 下夜班与大休都不进账。
@@ -96,6 +85,67 @@ void main() {
       // 天列表升序。
       expect(month.days.first.date.day, 2);
       expect(month.days.last.date.day, 31);
+      // 没有设过加项。
+      expect(month.extraDays, 0);
+    });
+
+    test('T11 判据：出勤 0 天的月，月薪不计入', () {
+      // 空链：任何一天都没有班次 → 出勤 0 天。
+      const chain = ScheduleChain();
+      const config = PayrollConfig(monthlyWage: 8000);
+      final month =
+          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
+
+      expect(month.workedDays, 0);
+      expect(month.days, isEmpty);
+      // 出勤 0 天 → 月薪不计入，total == 0。
+      expect(month.total, 0);
+      expect(month.extraTotal, 0);
+    });
+
+    test('出勤 1 天：月薪仍全额计入', () {
+      // 用一个正常方案，但用 ScheduleSpan 只覆盖 1/6 这一天 ——
+      // 其余天没有段覆盖 = 无排班 = 不计出勤。
+      final chain = ScheduleChain(spans: [
+        ScheduleSpan(
+          scheduleId: 1,
+          schedule: fourShift(),
+          from: DateTime.utc(2025, 1, 6),
+          to: DateTime.utc(2025, 1, 6),
+        ),
+      ]);
+      const config = PayrollConfig(monthlyWage: 8000);
+      final month =
+          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, const {});
+
+      expect(month.workedDays, 1);
+      expect(month.total, closeTo(8000, 0.001));
+    });
+
+    test('加项计入 extraTotal 并进 total', () {
+      final chain = ScheduleChain(fallback: fourShift());
+      const config = PayrollConfig(monthlyWage: 8000);
+      final extras = {
+        dayNumber(DateTime.utc(2025, 1, 6)): 640.0,
+        dayNumber(DateTime.utc(2025, 1, 10)): 320.0,
+      };
+      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, extras);
+
+      expect(month.extraTotal, closeTo(640 + 320, 0.001));
+      expect(month.extraDays, 2);
+      // total = 月薪 + 加项。
+      expect(month.total, closeTo(8000 + 640 + 320, 0.001));
+    });
+
+    test('加项落在休班天不算（出勤判据说了算）', () {
+      final chain = ScheduleChain(fallback: fourShift());
+      const config = PayrollConfig(monthlyWage: 8000);
+      // 1/9 是大休（isRest）。
+      final extras = {dayNumber(DateTime.utc(2025, 1, 9)): 500.0};
+      final month = computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, extras);
+
+      expect(month.extraTotal, 0);
+      expect(month.extraDays, 0);
     });
 
     test('跨时段的一个月：上半月 A 套、下半月 B 套，逐天问链', () {
@@ -107,7 +157,7 @@ void main() {
           ShiftClass(name: '白班', abbr: '白', isRest: false),
           ShiftClass(name: '大休', abbr: '休', isRest: true),
         ],
-        cycle: const [0, 1],
+        cycle: const [[0], [1]],
         teamCount: 1,
         ourTeamIndex: 0,
         teamNames: ['我们'],
@@ -120,7 +170,7 @@ void main() {
           ShiftClass(name: '夜班', abbr: '夜', isRest: false),
           ShiftClass(name: '大休', abbr: '休', isRest: true),
         ],
-        cycle: const [0, 1],
+        cycle: const [[0], [1]],
         teamCount: 1,
         ourTeamIndex: 0,
         teamNames: ['我们'],
@@ -140,37 +190,25 @@ void main() {
           ),
         ],
       );
-      const config = PayrollConfig(dailyWage: 100, dailySubsidy: 0);
+      const config = PayrollConfig(monthlyWage: 8000);
       final month =
           computeMonthPay(chain, DateTime.utc(2026, 1, 10), config, const {});
 
       // 1/1..1/15：白休轮转 = 白 8 天（1,3,5,7,9,11,13,15）；
       // 1/16..1/31：从 1/16 起按 B（1/16 休、1/17 班…）= 夜 8 天。
       expect(month.workedDays, 16);
-      expect(month.wageTotal, closeTo(16 * 100, 0.001));
+      expect(month.total, closeTo(8000, 0.001));
       // 两套的「休」合并口径：计数里不该冒出第三个键。
       expect(month.shiftCounts['白'], 8);
       expect(month.shiftCounts['夜'], 8);
       expect(month.shiftCounts.length, 2);
-    });
-
-    test('自定义日薪落在哪个天就只影响哪天', () {
-      final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320, dailySubsidy: 10);
-      final wages = {dayNumber(DateTime.utc(2025, 1, 6)): 960.0};
-      final month =
-          computeMonthPay(chain, DateTime.utc(2025, 1, 15), config, wages);
-
-      // 16 天出勤：15 天 × 320 + 1 天 × 960。
-      expect(month.wageTotal, closeTo(15 * 320 + 960, 0.001));
-      expect(month.customWageDays, 1);
     });
   });
 
   group('computeYearPay', () {
     test('12 个月按 1 月在前的升序，出勤各自独立', () {
       final chain = ScheduleChain(fallback: fourShift());
-      const config = PayrollConfig(dailyWage: 320);
+      const config = PayrollConfig(monthlyWage: 8000);
       final year = computeYearPay(chain, 2025, config, const {});
 
       expect(year.length, 12);
@@ -179,8 +217,45 @@ void main() {
       // 2025-01 出勤 16 天；2025-02（28 天，2/1 恰好是下夜班）出勤 14 天。
       expect(year[0].workedDays, 16);
       expect(year[1].workedDays, 14);
-      // 每个月都是独立的 MonthPay。
-      expect(year[0].total, closeTo(16 * 320, 0.001));
+      // 每个月出勤 ≥ 1 天 → 月薪全额。
+      expect(year[0].total, closeTo(8000, 0.001));
+    });
+
+    test('某个月出勤 0 天时该月 total == 0，不影响其他月', () {
+      // 构造一条链：只有 2025-02 有班，1 月与 3 月全是休。
+      final febOnly = ShiftSchedule(
+        name: '只有二月',
+        anchorDate: DateTime.utc(2025, 2, 1),
+        classes: const [
+          ShiftClass(name: '白班', abbr: '白', isRest: false),
+          ShiftClass(name: '大休', abbr: '休', isRest: true),
+        ],
+        cycle: const [[0], [1]],
+        teamCount: 1,
+        ourTeamIndex: 0,
+        teamNames: ['我们'],
+      );
+      // 用段把 2 月单独包起来，其余时间无排班。
+      final chain = ScheduleChain(spans: [
+        ScheduleSpan(
+          scheduleId: 1,
+          schedule: febOnly,
+          from: DateTime.utc(2025, 2, 1),
+          to: DateTime.utc(2025, 2, 28),
+        ),
+      ]);
+      const config = PayrollConfig(monthlyWage: 8000);
+      final year = computeYearPay(chain, 2025, config, const {});
+
+      // 1 月出勤 0 天 → total == 0（T11）。
+      expect(year[0].workedDays, 0);
+      expect(year[0].total, 0);
+      // 2 月有班 → 月薪全额。
+      expect(year[1].workedDays, greaterThan(0));
+      expect(year[1].total, closeTo(8000, 0.001));
+      // 3 月出勤 0 天 → total == 0。
+      expect(year[2].workedDays, 0);
+      expect(year[2].total, 0);
     });
   });
 
@@ -206,13 +281,27 @@ void main() {
     });
   });
 
-  test('dayPaySubtitleText 把两笔钱拼进文案', () {
-    final chain = ScheduleChain(fallback: fourShift());
-    final pay = payForDay(chain, DateTime.utc(2025, 1, 6),
-        const PayrollConfig(dailyWage: 320, dailySubsidy: 10), const {});
-    expect(
-      dayPaySubtitleText(pay!),
-      '日薪 ¥320.00 ＋ 补助 ¥10.00',
-    );
+  group('dayPaySubtitleText', () {
+    test('有加项：拼成「加项 ¥640.00」', () {
+      final chain = ScheduleChain(fallback: fourShift());
+      final extras = {dayNumber(DateTime.utc(2025, 1, 6)): 640.0};
+      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), extras);
+      expect(dayPaySubtitleText(pay!), '加项 ¥640.00');
+    });
+
+    test('没加项：返回空串（不画满屏 ¥0.00）', () {
+      final chain = ScheduleChain(fallback: fourShift());
+      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), const {});
+      expect(dayPaySubtitleText(pay!), '');
+    });
+
+    test('英文语种', () {
+      L10n.locale = 'en';
+      final chain = ScheduleChain(fallback: fourShift());
+      final extras = {dayNumber(DateTime.utc(2025, 1, 6)): 640.0};
+      final pay = payForDay(chain, DateTime.utc(2025, 1, 6), extras);
+      expect(dayPaySubtitleText(pay!), 'Extra ¥640.00');
+      L10n.locale = 'zh';
+    });
   });
 }

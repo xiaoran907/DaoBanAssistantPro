@@ -48,7 +48,7 @@ ScheduleTemplate _template() => const ScheduleTemplate(
         ShiftClass(name: '早', abbr: '早', startMinute: 480, endMinute: 960),
         ShiftClass(name: '休', abbr: '休', isRest: true),
       ],
-      cycle: [0, 1],
+      cycle: [[0], [1]],
       teamCount: 2,
       teamOffsets: [0, 1],
     );

@@ -58,6 +58,25 @@ CREATE TABLE custom_templates (
 )
 ''';
 
+/// 班次定义表（v6 建的那张）。fixture 只建「迁移分支会碰到的表」，而 v15 那段会
+/// `addColumn shift_class_rows.extra_segments` —— 真实 v10 库一定有它，fixture
+/// 就得有（同上 `custom_templates` 的那一条）。**故意不带** `extra_segments`
+/// ：那一列正是这条迁移要加上去的；也不带 `alarm_minute`（v10 那次迁移已经删了）。
+const _v10ShiftClassTable = '''
+CREATE TABLE shift_class_rows (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  schedule_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  abbr TEXT,
+  start_minute INTEGER,
+  end_minute INTEGER,
+  is_rest INTEGER NOT NULL DEFAULT 0,
+  color INTEGER NOT NULL DEFAULT 4284186623,
+  alarm_enabled INTEGER NOT NULL DEFAULT 0
+)
+''';
+
 int _sec(DateTime d) => d.millisecondsSinceEpoch ~/ 1000;
 
 Future<AppDatabase> _openV10() async {
@@ -65,6 +84,7 @@ Future<AppDatabase> _openV10() async {
   raw.execute(_v10ScheduleTable);
   raw.execute(_v10ScheduleEvents);
   raw.execute(_v10CustomTemplates);
+  raw.execute(_v10ShiftClassTable);
 
   raw.execute(
     'INSERT INTO shift_schedule_rows '
@@ -94,7 +114,7 @@ void main() {
     addTearDown(db.close);
 
     // 一路升到**最新**（迁移分支全部倒序跑过），所以这里跟的是当前 schemaVersion。
-    expect(db.schemaVersion, 14);
+    expect(db.schemaVersion, 16);
 
     // ① 方案行原样 —— 注意中间被 `TableMigration` 重建过一次
     final rows = await db.select(db.shiftScheduleRows).get();

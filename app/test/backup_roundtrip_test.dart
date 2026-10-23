@@ -43,7 +43,7 @@ void main() {
     await repo.setDayOverrides([DateTime.utc(2025, 1, 6)],
         classId: schedule.classes.first.id!);
     await repo.setPayrollConfig(
-        const PayrollConfig(dailyWage: 320, dailySubsidy: 10));
+        const PayrollConfig(monthlyWage: 320));
     await repo.setPayrollDayWage(DateTime.utc(2025, 1, 6), 640);
     await repo.savePayrollRecord(
         year: 2025, month: 1, actual: 5120, note: '工资');
@@ -94,7 +94,7 @@ void main() {
 
     // 薪资那半边。
     final settings = await db.select(db.payrollSettingsRows).get();
-    expect(settings.single.dailyWage, 320);
+    expect(settings.single.monthlyWage, 320);
     final dayWages = await db.select(db.payrollDayRows).get();
     expect(dayWages.single.wage, 640);
     final records = await db.select(db.payrollRecordRows).get();

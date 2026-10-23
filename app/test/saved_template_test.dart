@@ -34,7 +34,7 @@ class _FakeRepo extends AppRepository {
   int? deletedId;
   String? createdName;
   List<ShiftClass> createdClasses = const [];
-  List<int> createdCycle = const [];
+  List<List<int>> createdCycle = const [];
   int createdTeamCount = 0;
   List<int> createdOffsets = const [];
 
@@ -79,7 +79,7 @@ class _FakeRepo extends AppRepository {
     required String name,
     required DateTime anchorDate,
     required List<ShiftClass> classes,
-    required List<int> cycle,
+    required List<List<int>> cycle,
     bool makeCurrent = true,
     int teamCount = 4,
     List<String> teamNames = const ['一班', '二班', '三班', '四班'],
@@ -113,7 +113,7 @@ ShiftSchedule _domain() => ShiftSchedule(
             alarms: [ShiftAlarm(minute: 7 * 60)]),
         ShiftClass(name: '休班', abbr: '休', isRest: true, color: 0xFF9AA0B4),
       ],
-      cycle: const [0, 0, 1, 1, 1],
+      cycle: const [[0], [0], [1], [1], [1]],
       teamCount: 5,
       teamNames: const ['一班', '二班', '三班', '四班', '五班'],
       ourTeamIndex: 0,
@@ -219,7 +219,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.createdName, '我的零点班', reason: '新方案直接用模板名');
-    expect(repo.createdCycle, [0, 0, 1, 1, 1]);
+    expect(repo.createdCycle, [[0], [0], [1], [1], [1]]);
     expect(repo.createdTeamCount, 5);
     expect(repo.createdOffsets, [0, 2, 4, 6, 8],
         reason: '错位在存模板时已归一化，建方案时原样装上');

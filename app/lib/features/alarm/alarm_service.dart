@@ -140,24 +140,27 @@ List<ShiftAlarmPlan> planShiftAlarms(
   final plans = <ShiftAlarmPlan>[];
   for (var d = 0; d < days; d++) {
     final date = anchor.add(Duration(days: d));
-    final t = source.shiftOn(date);
-    if (t == null || t.isRest || !t.alarmEnabled || t.alarms.isEmpty) {
-      continue;
-    }
+    final shifts = source.shiftOn(date);
     // 按天覆盖：该天被单独关闭则跳过
     if (overrides[dayNumber(date)] == false) continue;
 
-    for (var i = 0; i < t.alarms.length; i++) {
-      final alarm = t.alarms[i];
-      final fireAt = shiftAlarmFireAt(date, t, alarm);
-      if (!fireAt.isAfter(from)) continue;
-      plans.add(ShiftAlarmPlan(
-        offset: d,
-        shift: t,
-        alarm: alarm,
-        alarmIndex: i,
-        fireAt: fireAt,
-      ));
+    for (final t in shifts) {
+      if (t.isRest || !t.alarmEnabled || t.alarms.isEmpty) {
+        continue;
+      }
+
+      for (var i = 0; i < t.alarms.length; i++) {
+        final alarm = t.alarms[i];
+        final fireAt = shiftAlarmFireAt(date, t, alarm);
+        if (!fireAt.isAfter(from)) continue;
+        plans.add(ShiftAlarmPlan(
+          offset: d,
+          shift: t,
+          alarm: alarm,
+          alarmIndex: i,
+          fireAt: fireAt,
+        ));
+      }
     }
   }
   return plans;

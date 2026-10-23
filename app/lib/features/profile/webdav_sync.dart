@@ -118,7 +118,19 @@ class WebDavSyncResult {
   const WebDavSyncResult(this.outcome, [this.error]);
 
   final WebDavSyncOutcome outcome;
-  final Object? error;
+
+  /// 错误分档（`ok == false` 时非空）：
+  ///  · `'auth'`               —— 401/403，账号或应用密码不对；
+  ///  · `'network:dns'`        —— 域名解析失败，服务器地址写错；
+  ///  · `'network:tls'`        —— TLS 握手失败，证书链或代理重签；
+  ///  · `'network:timeout'`    —— 链路慢或代理黑洞，20 秒内没响应；
+  ///  · `'network:other'`      —— 连接被拒 / 重置 / 代理拒绝等；
+  ///  · `'http:NNN'`           —— 服务端返回了非 2xx（除 401/403）；
+  ///  · `'other:TypeName'`     —— 其他未预期的异常。
+  ///
+  /// 以前是 `Object?` 只按 `== 'auth'` 二分，任何网络失败都归成「连不上服务器」
+  /// —— 用户从这句话里推不出哪一类，排查无从下手。收档成字符串，UI 才能分档报。
+  final String? error;
 
   bool get ok =>
       outcome == WebDavSyncOutcome.uploaded ||
@@ -243,8 +255,15 @@ class WebDavSync {
       return const WebDavSyncResult(WebDavSyncOutcome.error, 'auth');
     } on WebDavNotFoundException {
       return const WebDavSyncResult(WebDavSyncOutcome.error, 'notfound');
+    } on WebDavNetworkException catch (e) {
+      return WebDavSyncResult(WebDavSyncOutcome.error,
+          'network:${e.kind.name}');
+    } on WebDavException catch (e) {
+      final status = e.status ?? -1;
+      return WebDavSyncResult(WebDavSyncOutcome.error, 'http:$status');
     } catch (e) {
-      return WebDavSyncResult(WebDavSyncOutcome.error, e);
+      return WebDavSyncResult(WebDavSyncOutcome.error,
+          'other:${e.runtimeType}');
     } finally {
       client.close();
     }

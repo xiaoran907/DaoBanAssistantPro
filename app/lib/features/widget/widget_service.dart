@@ -80,6 +80,7 @@ class WidgetService {
       themeMode: settings.themeMode.name,
       accent: settings.accentColor.toARGB32(),
       todayTodoCount: todayTodoCount,
+      showLunarDay: settings.showLunarDay,
     );
     final String json = jsonEncode(snap);
     // 去重键 = **内容本身**，只把「生成时刻」那一项换成常量（它每次都不同，但它不是

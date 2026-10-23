@@ -33,7 +33,7 @@ class _Saved {
   final bool monthly;
   final List<MonthlySegment> monthSegments;
   final List<int> teamSegOffsets;
-  final List<int> cycle;
+  final List<List<int>> cycle;
 }
 
 class _FakeRepository extends AppRepository {
@@ -57,7 +57,7 @@ class _FakeRepository extends AppRepository {
     required String name,
     required DateTime anchorDate,
     required List<ShiftClass> classes,
-    required List<int> cycle,
+    required List<List<int>> cycle,
     bool makeCurrent = true,
     int teamCount = 4,
     List<String> teamNames = const ['一班', '二班', '三班', '四班'],
@@ -89,7 +89,7 @@ ShiftSchedule _domain({
   List<MonthlySegment> monthSegments = const [],
   List<int> teamSegOffsets = const [],
   int teamCount = 4,
-  List<int> cycle = const [0, 1, 2],
+  List<List<int>> cycle = const [[0], [1], [2]],
 }) =>
     ShiftSchedule(
       name: '测试排班',
@@ -250,7 +250,7 @@ void main() {
     final today = dateOnly(DateTime.now());
     final want = [
       for (var i = 0; i < 14; i++)
-        domain.shiftOn(DateTime(today.year, today.month, today.day + i))!.shortLabel,
+        domain.shiftOn(DateTime(today.year, today.month, today.day + i)).first.shortLabel,
     ];
     expect(abbrs, want, reason: '预览条必须与 shiftOn 一格一格对上');
   });
@@ -388,7 +388,7 @@ void main() {
         tester,
         _domain(
           monthly: true,
-          cycle: const [3],
+          cycle: const [[3]],
           monthSegments: const [
             MonthlySegment(startDay: 1, classIndex: 0),
             MonthlySegment(startDay: 11, classIndex: 1),

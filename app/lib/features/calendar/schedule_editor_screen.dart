@@ -104,8 +104,8 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
   /// 悬空清理连带删掉覆盖行，得先告诉用户会丢几天。
   Map<int, int> _overridesByClassId = const {};
 
-  /// 周期序列：长度即周期，元素是 [_classes] 的下标。
-  List<int> _cycle = [];
+  /// 周期序列：长度即周期，元素是该天的班次下标集合（多选）。
+  List<Set<int>> _cycle = [];
 
   /// 这套方案走**按月锚定**吗（每月 1 号归零）。**模式唯一的判据**。
   ///
@@ -173,7 +173,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
         _classes = List.of(dd.classes);
         _overrideDays = dd.dayOverrides.length;
         _overridesByClassId = _countOverridesByClassId(dd);
-        _cycle = List.of(dd.cycle);
+        _cycle = dd.cycle.map((day) => Set.of(day)).toList();
         _monthly = dd.monthly;
         _monthlySegments = List.of(dd.monthlySegments);
         _teamCount = dd.teamCount;
@@ -435,7 +435,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
         name: _name,
         anchorDate: dateOnly(_anchor),
         classes: _classes,
-        cycle: _cycle,
+        cycle: _cycle.map((day) => day.toList()).toList(),
         teamCount: _teamCount,
         teamNames: _teamNames,
         ourTeamIndex: _ourTeamIndex,
@@ -499,7 +499,8 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
   }
 
   Widget _previewCell(ShiftSchedule schedule, DateTime date, Color muted) {
-    final s = schedule.shiftOn(date);
+    final sList = schedule.shiftOn(date);
+    final s = sList.firstOrNull;
     final color = s == null ? muted : Color(s.color);
     return Column(
       children: [
@@ -1320,7 +1321,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
     final seg = _monthlySegments[index];
     final classIndex =
         seg.classIndex >= 0 && seg.classIndex < _classes.length ? seg.classIndex : -1;
-    final timeText = classIndex < 0 ? '' : _rangeText(_classes[classIndex]);
+    final timeText = classIndex < 0 ? '' : _rangeText([_classes[classIndex]]);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppTokens.spaceXs),
       child: LayoutBuilder(
@@ -1475,7 +1476,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
     if (_classes.isEmpty) return; // 没有班次定义就无从引用
     setState(() {
       if (n > _cycle.length) {
-        final tail = _cycle.isEmpty ? 0 : _cycle.last;
+        final tail = _cycle.isEmpty ? <int>{} : Set.of(_cycle.last);
         while (_cycle.length < n) {
           _cycle.add(tail);
         }
@@ -1585,7 +1586,8 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
 
   Widget _cycleRow(BuildContext context, int index) {
     final muted = AppTokens.inkMuted(context);
-    final timeText = _rangeText(_classes[_cycle[index]]);
+    final dayShifts = _cycle[index].map((i) => _classes[i]).toList();
+    final timeText = _rangeText(dayShifts);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppTokens.spaceXs),
       child: LayoutBuilder(
@@ -1625,8 +1627,14 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
                             key: cycleChipKey(index, i),
                             label: _classes[i].name,
                             color: Color(_classes[i].color),
-                            selected: i == _cycle[index],
-                            onTap: () => setState(() => _cycle[index] = i),
+                            selected: _cycle[index].contains(i),
+                            onTap: () => setState(() {
+                              if (_cycle[index].contains(i)) {
+                                _cycle[index].remove(i);
+                              } else {
+                                _cycle[index].add(i);
+                              }
+                            }),
                           ),
                         ),
                     ],
@@ -1646,15 +1654,21 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
   }
 
   /// 周期行右侧的只读时间，与日历上的显示规则一致。
-  String _rangeText(ShiftClass c) {
-    if (c.isRest || c.startMinute == null || c.endMinute == null) {
-      return L10n.rest;
+  String _rangeText(List<ShiftClass> shifts) {
+    if (shifts.isEmpty) return L10n.rest;
+    if (shifts.length == 1) {
+      final c = shifts.single;
+      if (c.isRest || c.startMinute == null || c.endMinute == null) {
+        return L10n.rest;
+      }
+      var e = c.endMinute!;
+      final nextDay = e > 1440 || e < c.startMinute!;
+      if (e > 1440) e -= 1440;
+      return L10n.timeRange(
+          formatClock(c.startMinute!), formatClock(e), nextDay);
     }
-    var e = c.endMinute!;
-    final nextDay = e > 1440 || e < c.startMinute!;
-    if (e > 1440) e -= 1440;
-    return L10n.timeRange(
-        formatClock(c.startMinute!), formatClock(e), nextDay);
+    // 多班次：显示数量
+    return '${shifts.length}${L10n.t('班次', 'shifts')}';
   }
 
   /// 5) 班组设置（可选）—— 默认折叠。
@@ -2002,7 +2016,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
         // 从空白表切回普通表：恢复默认四班两倒（因为空白表把两边都清空了）
         final d = defaultSchedule();
         _classes = List.of(d.classes);
-        _cycle = List.of(d.cycle);
+        _cycle = d.cycle.map((day) => Set.of(day)).toList();
         _monthly = false;
         _monthlySegments = [];
         // 空表而不是 [0,1,2,3]：那时它本来就不参与计算，而塞一份**天偏移**进去
@@ -2123,7 +2137,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
     // **周期与按月段表都要数**：只数周期的话，按月方案里被「段」引用的班次会被
     // 放行 —— 删掉之后段的下标整体前移、指向别的班次，不报错、只是那几天显示成
     // 别的班（与「覆盖指飞」是同一类静默错）。
-    final used = _cycle.where((c) => c == index).length +
+    final used = _cycle.where((day) => day.contains(index)).length +
         _monthlySegments.where((s) => s.classIndex == index).length;
     if (used > 0) {
       // 仍被引用：直接拦下，不弹确认 —— 这条路本来就删不掉。
@@ -2178,9 +2192,16 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
       _classes.removeAt(index);
       _nameCtrls.removeAt(index).dispose();
       _abbrCtrls.removeAt(index).dispose();
-      // 删掉一个定义后，周期里所有比它大的下标整体前移一位
+      // 删掉一个定义后，周期里所有比它大的下标整体前移一位，
+      // 等于它本身的下标删掉
       for (var i = 0; i < _cycle.length; i++) {
-        if (_cycle[i] > index) _cycle[i]--;
+        final day = _cycle[i];
+        final newDay = <int>{};
+        for (final ci in day) {
+          if (ci == index) continue;
+          newDay.add(ci > index ? ci - 1 : ci);
+        }
+        _cycle[i] = newDay;
       }
       // 段表**同待遇**：引用检查与下标重映射都要做，否则段会静默指到别的班次。
       for (var i = 0; i < _monthlySegments.length; i++) {
@@ -2205,7 +2226,7 @@ class _ScheduleEditorScreenState extends ConsumerState<ScheduleEditorScreen> {
             name: name,
             anchorDate: anchor,
             classes: _classes,
-            cycle: _cycle,
+            cycle: _cycle.map((day) => day.toList()).toList(),
             makeCurrent: widget.scheduleId == null,
             teamCount: _teamCount,
             teamNames: _teamNames,

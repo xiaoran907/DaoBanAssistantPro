@@ -37,7 +37,7 @@ void main() {
     await repo.ensureSeeded();
     // 给一笔看得见的账：日薪 320 / 补助 10。
     await repo.setPayrollConfig(
-        const PayrollConfig(dailyWage: 320, dailySubsidy: 10));
+        const PayrollConfig(monthlyWage: 320));
   });
   tearDown(() => db.close());
 
@@ -77,11 +77,12 @@ void main() {
     final month = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(dailyWage: 320, dailySubsidy: 10),
+      const PayrollConfig(monthlyWage: 320),
       const {},
     );
     // 金额卡上那行就是现算的总额（同一口径的 moneyText）。
-    expect(find.text(moneyText(month.total)), findsOneWidget);
+    // 包月制下 total == monthlyWage（无加项），大数字与月薪列显示同值，所以 findsWidgets。
+    expect(find.text(moneyText(month.total)), findsWidgets);
     expect(find.byKey(const Key('stats-by-shift')), findsOneWidget);
     await disposeScreen(tester);
   });
@@ -90,7 +91,7 @@ void main() {
     final monthBefore = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(dailyWage: 320, dailySubsidy: 10),
+      const PayrollConfig(monthlyWage: 320),
       const {},
     );
     if (monthBefore.days.isEmpty) {
@@ -107,9 +108,9 @@ void main() {
     await tester.tap(row);
     await settle(tester);
 
-    // 弹层里有「当天日薪」标签与保存钮。
-    expect(find.text(L10n.dayWageDialogTitle(day)), findsOneWidget);
-    // 弹层里唯一的输入框就是当天日薪（GlassField 的标签不是 TextField 的
+    // 弹层里有「当天加项」标签与保存钮。
+    expect(find.text(L10n.dayExtraDialogTitle(day)), findsOneWidget);
+    // 弹层里唯一的输入框就是当天加项（GlassField 的标签不是 TextField 的
     // 子孙，widgetWithText 找不到它 —— 按序取）。
     await tester.enterText(find.byType(TextField).first, '640');
     await tester.tap(find.text(L10n.save));
@@ -118,14 +119,14 @@ void main() {
     // 库里有那一天的覆盖。
     expect((await repo.listPayrollDayWages())[dayNumber(day)], 640);
 
-    // 界面重算：总额抬高了 320（640 替掉 320）。
+    // 界面重算：总额抬高了 640（加项）。
     final monthAfter = computeMonthPay(
       (await repo.getActiveSchedules())!.chain,
       DateTime.now(),
-      const PayrollConfig(dailyWage: 320, dailySubsidy: 10),
+      const PayrollConfig(monthlyWage: 320),
       await repo.listPayrollDayWages(),
     );
-    expect(monthAfter.total, closeTo(monthBefore.total + 320, 0.001));
+    expect(monthAfter.total, closeTo(monthBefore.total + 640, 0.001));
     await disposeScreen(tester);
   });
 

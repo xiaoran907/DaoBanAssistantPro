@@ -46,7 +46,7 @@ Future<AppDatabase> _pumpChainedCalendar(WidgetTester tester,
           ShiftClass(
               name: '$name-班', abbr: abbr, startMinute: 480, endMinute: 1080),
         ],
-        cycle: const [0],
+        cycle: const [[0]],
         makeCurrent: current,
         teamCount: 1,
         teamNames: const ['我'],

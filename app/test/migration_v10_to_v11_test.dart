@@ -67,12 +67,32 @@ CREATE TABLE custom_templates (
 )
 ''';
 
+/// 班次定义表（v6 建的那张）。fixture 只建「迁移分支会碰到的表」，而 v15 那段会
+/// `addColumn shift_class_rows.extra_segments` —— 真实 v10 库一定有它，fixture
+/// 就得有（同上 `custom_templates` 的那一条）。**故意不带** `extra_segments`
+/// ：那一列正是这条迁移要加上去的；也不带 `alarm_minute`（v10 那次迁移已经删了）。
+const _v10ShiftClassTable = '''
+CREATE TABLE shift_class_rows (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  schedule_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  abbr TEXT,
+  start_minute INTEGER,
+  end_minute INTEGER,
+  is_rest INTEGER NOT NULL DEFAULT 0,
+  color INTEGER NOT NULL DEFAULT 4284186623,
+  alarm_enabled INTEGER NOT NULL DEFAULT 0
+)
+''';
+
 void main() {
   test('v10 → v11：老待办一条不丢、series_id 为空、新表能写能读', () async {
     final raw = sqlite3.sqlite3.openInMemory();
     raw.execute(_v10ScheduleEvents);
     raw.execute(_v10ScheduleTable);
     raw.execute(_v10CustomTemplates);
+    raw.execute(_v10ShiftClassTable);
     // 两条老待办：一条未完成、一条已完成，值都写全（迁移把值吞了才看得出来）
     raw.execute(
       'INSERT INTO schedule_events '
@@ -103,7 +123,7 @@ void main() {
     addTearDown(db.close);
     // 从 v10 升上来会一路跑到**最新**的 schema（迁移分支按倒序全部执行），
     // 所以这里跟的是当前的 `schemaVersion`，不是 11 —— 每加一版 schema 都要回来改。
-    expect(db.schemaVersion, 14);
+    expect(db.schemaVersion, 16);
 
     // ① 老待办原样保留，且新列取到的是 null
     final events = await db.select(db.scheduleEvents).get();

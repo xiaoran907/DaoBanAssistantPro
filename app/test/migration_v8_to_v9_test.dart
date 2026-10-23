@@ -77,7 +77,7 @@ ShiftSchedule _schedule() => ShiftSchedule(
             alarms: [ShiftAlarm(minute: 7 * 60)]),
         ShiftClass(name: '休班', abbr: '休', isRest: true, color: 0xFF9AA0B4),
       ],
-      cycle: const [0, 1],
+      cycle: const [[0], [1]],
       teamCount: 2,
       teamNames: const ['一班', '二班'],
       teamOffsets: const [0, 1],

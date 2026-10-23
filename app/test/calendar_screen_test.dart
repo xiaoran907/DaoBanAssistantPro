@@ -1112,7 +1112,7 @@ void main() {
           ShiftClass(name: '白班', abbr: '白', startMinute: 480, endMinute: 1080),
           ShiftClass(name: '休班', abbr: '休', isRest: true),
         ],
-        cycle: const [0, 1],
+        cycle: const [[0], [1]],
         teamCount: 1,
         teamNames: const ['我'],
         teamOffsets: const [0],

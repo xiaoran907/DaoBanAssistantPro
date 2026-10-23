@@ -20,7 +20,7 @@ ShiftSchedule _sched(String name) => ShiftSchedule(
         ShiftClass(name: '$name-休', abbr: '休', isRest: true),
       ],
       // 周期 2 天：单数日白班、双数日休班（相对 anchor）。
-      cycle: const [0, 1],
+      cycle: const [[0], [1]],
     );
 
 DateTime _d(int y, int m, int day) => DateTime.utc(y, m, day);
@@ -168,8 +168,8 @@ void main() {
       // 周期 2 天：anchor 起第 0 天=白、第 1 天=休。挑两天让两套的班级不同。
       final before = chain.shiftOn(_d(2026, 6, 30));
       final after = chain.shiftOn(_d(2026, 7, 1));
-      expect(before!.name, startsWith('A-'));
-      expect(after!.name, startsWith('B-'));
+      expect(before.first.name, startsWith('A-'));
+      expect(after.first.name, startsWith('B-'));
     });
 
     test('hasCycle：空白表不算，只要有**一套**有周期就为真', () {
@@ -398,7 +398,7 @@ void main() {
             name: '按月',
             anchorDate: DateTime.utc(2026, 1, 1),
             classes: const [ShiftClass(name: '按月-中', abbr: '中')],
-            cycle: const [0],
+            cycle: const [[0]],
             monthly: false,
             monthlySegments: three,
           ))));
@@ -427,11 +427,11 @@ void main() {
       expect(chain.hasScheduleOn(_d(2026, 10, 15)), isTrue);
 
       // 那几天算出来的班次，确实是**按月切法**给的（10/1 恒第一段）
-      expect(chain.shiftOn(_d(2026, 10, 1))!.name, '按月-中');
-      expect(chain.shiftOn(_d(2026, 10, 10))!.name, '按月-中');
-      expect(chain.shiftOn(_d(2026, 10, 11))!.name, '按月-白');
-      expect(chain.shiftOn(_d(2026, 10, 21))!.name, '按月-夜');
-      expect(chain.shiftOn(_d(2026, 10, 31))!.name, '按月-夜');
+      expect(chain.shiftOn(_d(2026, 10, 1)).first.name, '按月-中');
+      expect(chain.shiftOn(_d(2026, 10, 10)).first.name, '按月-中');
+      expect(chain.shiftOn(_d(2026, 10, 11)).first.name, '按月-白');
+      expect(chain.shiftOn(_d(2026, 10, 21)).first.name, '按月-夜');
+      expect(chain.shiftOn(_d(2026, 10, 31)).first.name, '按月-夜');
     });
   });
 }

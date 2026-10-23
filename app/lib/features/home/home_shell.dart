@@ -20,6 +20,7 @@ import '../calendar/calendar_screen.dart';
 import '../profile/app_dialogs.dart';
 import '../profile/profile_screen.dart';
 import '../schedule/schedule_screen.dart';
+import '../stats/stats_screen.dart';
 import '../widget/widget_service.dart';
 
 /// 底部导航壳：悬浮液态玻璃胶囊（点击切整数 tab，拖拽松手停在手指位置）。
@@ -47,6 +48,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
         (Icons.calendar_month_outlined, L10n.navCalendar),
         (Icons.alarm_outlined, L10n.navAlarm),
         (Icons.event_note_outlined, L10n.navTodo),
+        (Icons.account_balance_wallet_outlined, L10n.navSalary),
         (Icons.person_outlined, L10n.navProfile),
       ];
 
@@ -54,6 +56,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
     CalendarScreen(),
     AlarmScreen(),
     ScheduleScreen(),
+    StatsScreen(),
     ProfileScreen(),
   ];
 

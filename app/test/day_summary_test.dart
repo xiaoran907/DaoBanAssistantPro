@@ -87,7 +87,7 @@ void main() {
             ShiftClass(id: 2, name: '夜班', abbr: '夜', color: 0xFF7A5CFF),
             ShiftClass(id: 3, name: '休班', abbr: '休', isRest: true, color: 0xFF5A5F73),
           ],
-          cycle: const [0, 1, 2],
+          cycle: const [[0], [1], [2]],
         );
 
     test('没有链 / 空白表：返回 null（调用点据此**不画那一行**）', () {

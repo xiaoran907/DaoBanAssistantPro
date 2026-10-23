@@ -106,7 +106,7 @@ Future<AppDatabase> promoDatabase() async {
     name: '炼油三部 · 四班两倒',
     anchorDate: today,
     classes: shifts,
-    cycle: const [0, 1, 2, 3],
+    cycle: const [[0], [1], [2], [3]],
     makeCurrent: true,
     teamCount: 4,
     teamNames: L10n.defaultTeamNames(4),

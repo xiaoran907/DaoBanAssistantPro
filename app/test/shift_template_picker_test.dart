@@ -29,7 +29,7 @@ class _RecordingRepository extends AppRepository {
   bool lastMonthly = false;
   List<MonthlySegment> lastMonthSegments = const [];
   List<int> lastTeamSegOffsets = const [];
-  List<int> lastCycle = const [];
+  List<List<int>> lastCycle = const [];
 
   @override
   Future<int> saveSchedule({
@@ -37,7 +37,7 @@ class _RecordingRepository extends AppRepository {
     required String name,
     required DateTime anchorDate,
     required List<ShiftClass> classes,
-    required List<int> cycle,
+    required List<List<int>> cycle,
     bool makeCurrent = true,
     int teamCount = 4,
     List<String> teamNames = const ['一班', '二班', '三班', '四班'],
@@ -609,7 +609,7 @@ void main() {
     expect(built.monthlySegments.map((s) => s.startDay), [1, 11, 21]);
     expect(built.teamSegOffsets, [0, 1, 2]);
     // 端到端：那天真的算得出班次（不是空白表才有的 null）
-    expect(built.shiftOn(DateTime(2026, 12, 1))!.name, '中班');
-    expect(built.shiftOn(DateTime(2026, 12, 21))!.name, '夜班');
+    expect(built.shiftOn(DateTime(2026, 12, 1)).first.name, '中班');
+    expect(built.shiftOn(DateTime(2026, 12, 21)).first.name, '夜班');
   });
 }

@@ -127,7 +127,7 @@ class ScheduleChain implements ShiftSource {
   bool hasScheduleOn(DateTime day) => scheduleOn(day) != null;
 
   @override
-  ShiftClass? shiftOn(DateTime day) => scheduleOn(day)?.shiftOn(day);
+  List<ShiftClass> shiftOn(DateTime day) => scheduleOn(day)?.shiftOn(day) ?? [];
 
   /// 链上有没有「有周期」的方案。
   ///

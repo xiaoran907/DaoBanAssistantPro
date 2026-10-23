@@ -88,14 +88,16 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen>
     if (chain != null) {
       for (var i = 0; i < 30; i++) {
         final date = today.add(Duration(days: i));
-        final t = chain.shiftOn(date);
-        if (t == null || t.isRest || !t.alarmEnabled || t.alarms.isEmpty) {
-          continue;
+        final shifts = chain.shiftOn(date);
+        for (final t in shifts) {
+          if (t.isRest || !t.alarmEnabled || t.alarms.isEmpty) {
+            continue;
+          }
+          // 这个班次当天**只要还有没响过的闹钟**就保留这一行（响过的自动隐藏）。
+          // 判据不能只看第一条 —— 见 `hasPendingShiftAlarm`。
+          if (!hasPendingShiftAlarm(t, date, now)) continue;
+          shiftAlarms.add(_ShiftAlarmEntry(date, t, overrides[dayNumber(date)] ?? true));
         }
-        // 这个班次当天**只要还有没响过的闹钟**就保留这一行（响过的自动隐藏）。
-        // 判据不能只看第一条 —— 见 `hasPendingShiftAlarm`。
-        if (!hasPendingShiftAlarm(t, date, now)) continue;
-        shiftAlarms.add(_ShiftAlarmEntry(date, t, overrides[dayNumber(date)] ?? true));
       }
     }
 

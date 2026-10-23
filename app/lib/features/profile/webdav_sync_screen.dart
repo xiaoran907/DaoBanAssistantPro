@@ -167,9 +167,7 @@ class _WebDavSyncScreenState extends ConsumerState<WebDavSyncScreen> {
       WebDavSyncOutcome.noChange => L10n.webdavNoChange,
       WebDavSyncOutcome.conflict => L10n.webdavConflictTitle,
       WebDavSyncOutcome.notConfigured => L10n.webdavNotConfigured,
-      WebDavSyncOutcome.error => result.error == 'auth'
-          ? L10n.webdavAuthFailed
-          : L10n.webdavConnFailed,
+      WebDavSyncOutcome.error => _errorMessage(result.error),
     };
     showGlassSnack(
       context,
@@ -178,6 +176,43 @@ class _WebDavSyncScreenState extends ConsumerState<WebDavSyncScreen> {
           ? Icons.check_circle_outlined
           : Icons.error_outline,
     );
+  }
+
+  /// 把 [WebDavSyncResult.error] 里的分档字符串翻成用户能读懂的话。
+  ///
+  /// 以前只按 `== 'auth'` 二分，其他全归成一句「连不上服务器」—— 用户推不出
+  /// 是地址错、证书被拦、超时还是服务器拒绝，排查无从下手。现在按前缀分：
+  /// `network:dns` / `network:tls` / `network:timeout` / `http:NNN` /
+  /// `other:TypeName`，每种都有自己那句。
+  String _errorMessage(String? error) {
+    if (error == null || error.isEmpty) return L10n.webdavConnFailed;
+    final sep = error.indexOf(':');
+    final kind = sep < 0 ? error : error.substring(0, sep);
+    final arg = sep < 0 ? error : error.substring(sep + 1);
+    switch (kind) {
+      case 'auth':
+        return L10n.webdavAuthFailed;
+      case 'network':
+        switch (arg) {
+          case 'dns':
+            return L10n.webdavDnsFailed;
+          case 'tls':
+            return L10n.webdavTlsFailed;
+          case 'timeout':
+            return L10n.webdavTimeout;
+          default:
+            return L10n.webdavConnFailed;
+        }
+      case 'http':
+        final code = int.tryParse(arg);
+        return code == null
+            ? L10n.webdavConnFailed
+            : L10n.webdavServerRejected(code);
+      default:
+        // 'notfound' / 'other:...' / 其他未预期的分档 → 旧兵「连不上服务器」，
+        // 保证任何异常都能给用户一句、而不是空提示。
+        return L10n.webdavConnFailed;
+    }
   }
 
   @override

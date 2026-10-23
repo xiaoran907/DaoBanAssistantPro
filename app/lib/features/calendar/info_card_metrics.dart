@@ -245,7 +245,8 @@ InfoCardMetrics measureBottomInfoCardHeight({
     //   · 那天没有任何班表在管 → 「这段时间没有排班」那一句。
     // 间距照给：渲染那边那根 `SizedBox(height: spaceMd)` 是无条件的（见
     // `calendar_screen.dart` 的 `_infoCard`），少了它卡片会矮一截、内容顶出定高。
-    final dayShift = chain?.shiftOn(date);
+    final dayShiftList = chain?.shiftOn(date) ?? const [];
+    final dayShift = dayShiftList.firstOrNull;
     final rowH = dayShift != null
         ? [
             shiftLineH,
@@ -356,7 +357,8 @@ int _chipRows(
   var used = 0.0;
   for (var i = 0; i < schedule.teamCount; i++) {
     if (i == schedule.ourTeamIndex) continue;
-    final t = schedule.teamShift(i, date);
+    final tList = schedule.teamShift(i, date);
+    final t = tList.firstOrNull;
     if (t == null) continue;
     final name = i < schedule.teamNames.length
         ? schedule.teamNames[i]

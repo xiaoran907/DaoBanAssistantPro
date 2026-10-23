@@ -51,12 +51,14 @@ Future<void> seedIfEmpty(AppDatabase db) async {
     }
   }
   for (var i = 0; i < sched.cycle.length; i++) {
-    await db.into(db.shiftCycleRows).insert(
-          ShiftCycleRowsCompanion.insert(
-            scheduleId: id,
-            order: i,
-            classId: classIds[sched.cycle[i]],
-          ),
-        );
+    for (final ci in sched.cycle[i]) {
+      await db.into(db.shiftCycleRows).insert(
+            ShiftCycleRowsCompanion.insert(
+              scheduleId: id,
+              order: i,
+              classId: classIds[ci],
+            ),
+          );
+    }
   }
 }

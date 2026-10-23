@@ -66,13 +66,13 @@ void main() {
     expect(d.teamSegOffsets, [0, 1, 2]);
     expect(d.classes.map((c) => c.name), ['中班', '白班', '夜班']);
     // **下标换算对了**才有这个结果（库里存的是 classId，乱一位就显示成别的班）
-    expect(d.shiftOn(DateTime(2026, 12, 1))!.name, '中班');
-    expect(d.shiftOn(DateTime(2026, 12, 11))!.name, '白班');
-    expect(d.shiftOn(DateTime(2026, 12, 21))!.name, '夜班');
-    expect(d.shiftOn(DateTime(2026, 12, 31))!.name, '夜班');
+    expect(d.shiftOn(DateTime(2026, 12, 1)).first.name, '中班');
+    expect(d.shiftOn(DateTime(2026, 12, 11)).first.name, '白班');
+    expect(d.shiftOn(DateTime(2026, 12, 21)).first.name, '夜班');
+    expect(d.shiftOn(DateTime(2026, 12, 31)).first.name, '夜班');
     // 班组也串得对
-    expect(d.teamShift(1, DateTime(2026, 12, 1))!.name, '白班');
-    expect(d.teamShift(2, DateTime(2026, 12, 1))!.name, '夜班');
+    expect(d.teamShift(1, DateTime(2026, 12, 1)).first.name, '白班');
+    expect(d.teamShift(2, DateTime(2026, 12, 1)).first.name, '夜班');
   });
 
   test('往返：改一次段表再存，读回来是新的那一份', () async {
@@ -86,9 +86,9 @@ void main() {
     );
     final d = (await repo.getScheduleDomain(id))!;
     expect(d.monthlySegments.length, 2);
-    expect(d.shiftOn(DateTime(2026, 12, 1))!.name, '夜班');
-    expect(d.shiftOn(DateTime(2026, 12, 15))!.name, '夜班');
-    expect(d.shiftOn(DateTime(2026, 12, 16))!.name, '中班');
+    expect(d.shiftOn(DateTime(2026, 12, 1)).first.name, '夜班');
+    expect(d.shiftOn(DateTime(2026, 12, 15)).first.name, '夜班');
+    expect(d.shiftOn(DateTime(2026, 12, 16)).first.name, '中班');
   });
 
   test('往返：周期方案与按月方案在同一条时间线上各归各的', () async {
@@ -96,7 +96,7 @@ void main() {
       name: '四班两倒',
       anchorDate: dateOnly(DateTime(2026, 1, 6)),
       classes: [zhong(), bai()],
-      cycle: const [0, 1],
+      cycle: const [[0], [1]],
       makeCurrent: false,
     );
     final monthId = await saveMonthly();
@@ -137,7 +137,7 @@ void main() {
     }
     final d = (await repo.getScheduleDomain(id))!;
     expect(d.monthlySegments.length, 2);
-    expect(d.shiftOn(DateTime(2026, 12, 1))!.name, '中班');
+    expect(d.shiftOn(DateTime(2026, 12, 1)).first.name, '中班');
   });
 
   test('deleteSchedule：这套方案的段行一起删掉', () async {
@@ -145,7 +145,7 @@ void main() {
       name: '另一套',
       anchorDate: dateOnly(DateTime(2026, 1, 1)),
       classes: [zhong()],
-      cycle: const [0],
+      cycle: const [[0]],
       makeCurrent: false,
     );
     final id = await saveMonthly();

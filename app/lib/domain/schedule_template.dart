@@ -30,7 +30,7 @@ class ScheduleTemplate {
 
   final String name;
   final List<ShiftClass> classes;
-  final List<int> cycle;
+  final List<List<int>> cycle;
   final int teamCount;
 
   /// 班组的**天数**偏移（周期模式用）。
@@ -79,9 +79,14 @@ class ScheduleTemplate {
       final offset = t < teamOffsets.length ? teamOffsets[t] : t;
       var idx = offset % cycle.length;
       if (idx < 0) idx += cycle.length;
-      final classIndex = cycle[idx];
-      if (classIndex < 0 || classIndex >= classes.length) continue;
-      if (!classes[classIndex].isRest) count++;
+      final dayShifts = cycle[idx];
+      for (final classIndex in dayShifts) {
+        if (classIndex < 0 || classIndex >= classes.length) continue;
+        if (!classes[classIndex].isRest) {
+          count++;
+          break; // 一天只数一次
+        }
+      }
     }
     return count;
   }
@@ -150,9 +155,27 @@ class ScheduleTemplate {
 // 解码一律**容错**：坏数据丢那一条，不让一列坏 JSON 把整个模板库废掉。
 // ---------------------------------------------------------------------------
 
-String encodeTemplateCycle(List<int> cycle) => cycle.join(',');
+String encodeTemplateCycle(List<List<int>> cycle) =>
+    cycle.map((day) => day.join(',')).join(';');
 
-List<int> decodeTemplateCycle(String raw) => decodeTemplateInts(raw);
+List<List<int>> decodeTemplateCycle(String raw) {
+  if (raw.trim().isEmpty) return const [];
+  // 旧格式：逗号分隔的单班次（无分号）
+  if (!raw.contains(';')) {
+    return raw.split(',')
+        .map((e) => int.tryParse(e.trim()) ?? 0)
+        .map((ci) => [ci])
+        .toList();
+  }
+  // 新格式：分号分隔的多班次
+  return raw.split(';').map((dayStr) {
+    if (dayStr.trim().isEmpty) return <int>[];
+    return dayStr
+        .split(',')
+        .map((e) => int.tryParse(e.trim()) ?? 0)
+        .toList();
+  }).toList();
+}
 
 String encodeTemplateOffsets(List<int> offsets) => offsets.join(',');
 

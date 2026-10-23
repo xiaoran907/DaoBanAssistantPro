@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/monthly_pattern.dart';
+import '../domain/payroll.dart';
 import '../domain/recurring_todo.dart';
 import '../domain/schedule_chain.dart';
 import '../domain/schedule_template.dart';
@@ -60,13 +61,21 @@ class ActiveSchedule {
         .map((c) => c.toDomain(alarms: classAlarms[c.id] ?? const []))
         .toList();
     // 库里存的是 classId，领域层要的是 classes 的下标。
+    // cycle 现在是 List<List<int>>，需要按 order 分组。
     final indexById = {
       for (var i = 0; i < classes.length; i++) classes[i].id: i,
     };
-    final domainCycle = cycle
-        .map((r) => indexById[r.classId] ?? -1)
-        .where((i) => i >= 0)
-        .toList();
+    final cycleByOrder = <int, List<int>>{};
+    for (final r in cycle) {
+      final idx = indexById[r.classId];
+      if (idx == null) continue;
+      cycleByOrder.putIfAbsent(r.order, () => []).add(idx);
+    }
+    final maxOrder = cycleByOrder.keys.isEmpty ? -1 : cycleByOrder.keys.reduce((a, b) => a > b ? a : b);
+    final domainCycle = [
+      for (var i = 0; i <= maxOrder; i++)
+        cycleByOrder[i] ?? [],
+    ];
     // 段表同一个口径：classId → 下标，查不到的（班次被删、历史脏数据）跳过。
     final domainSegments = <MonthlySegment>[
       for (final r in monthSegments)
@@ -160,6 +169,7 @@ extension ShiftClassRowX on ShiftClassRow {
         color: color,
         alarmEnabled: alarmEnabled,
         alarms: alarms,
+        extraSegments: parseShiftSegments(extraSegments),
       );
 }
 
@@ -392,9 +402,122 @@ class AppRepository {
       // 攒的模板还在「新建排班」里，会当成 bug（2026-10-01 反馈）。
       await db.delete(db.customAlarms).go();
       await db.delete(db.customTemplates).go();
+      // 薪资三张表（统计与薪资）：与排班表无外键关系，也要清掉。
+      await db.delete(db.payrollSettingsRows).go();
+      await db.delete(db.payrollDayRows).go();
+      await db.delete(db.payrollRecordRows).go();
     });
     await seedIfEmpty(db);
   }
+
+  // ------------------------------------------------------------------
+  // 统计与薪资
+  // ------------------------------------------------------------------
+
+  /// 薪资设置；没存过返回**全 0**（[PayrollConfig.isUnset]）而不是 null ——
+  /// 引擎拿它直接算，界面据 isUnset 决定是画空态还是画数。
+  Future<PayrollConfig> getPayrollConfig() async {
+    final row = await db.select(db.payrollSettingsRows).getSingleOrNull();
+    if (row == null) return const PayrollConfig();
+    return PayrollConfig(monthlyWage: row.monthlyWage);
+  }
+
+  /// 保存设置（单例行）：先删后插。
+  ///
+  /// 不用 upsert：`id` 是自增主键、不指住任何东西，显式带回去写回反而会在
+  /// 备份还原时把主键序列带偏。删干净再插一行恒好，也顺手保证「永远只有一行」。
+  Future<void> setPayrollConfig(PayrollConfig config) async {
+    await db.transaction(() async {
+      await db.delete(db.payrollSettingsRows).go();
+      await db.into(db.payrollSettingsRows).insert(PayrollSettingsRowsCompanion(
+            monthlyWage: Value(config.monthlyWage),
+          ));
+    });
+  }
+
+  Stream<PayrollConfig> watchPayrollConfig() => db
+      .select(db.payrollSettingsRows)
+      .watch()
+      .map((rows) => rows.isEmpty
+          ? const PayrollConfig()
+          : PayrollConfig(monthlyWage: rows.single.monthlyWage));
+
+  /// 给某一天单独设加项（加班 / 双倍工资那天在月薪之外额外加一笔）。
+  ///
+  /// 参数名仍叫 [wage]（v16 遗留，列名也是 `wage`），语义已从「替换固定日薪」
+  /// 变成「加项」（v0.12.3，用户拍板包月制）；老数据在 v17 迁移里已清空，
+  /// 列名不改以免牵动读写两侧与全部测试。
+  ///
+  /// [day] 按 [dateOnly] 口径归一天：传带时分的日期也落到同一天。
+  Future<void> setPayrollDayWage(DateTime day, double wage) async {
+    await db.into(db.payrollDayRows).insertOnConflictUpdate(
+          PayrollDayRowsCompanion.insert(
+            day: Value(dayNumber(dateOnly(day))),
+            wage: wage,
+          ),
+        );
+  }
+
+  /// 清除某一天的加项（回到「这天没有额外加项」，不是记 0）；不存在也安静。
+  Future<void> clearPayrollDayWage(DateTime day) async {
+    await (db.delete(db.payrollDayRows)
+          ..where((t) => t.day.equals(dayNumber(dateOnly(day)))))
+        .go();
+  }
+
+  /// 全部单日加项：`dayNumber → 金额`（引擎直接拿这份算）。
+  Future<Map<int, double>> listPayrollDayWages() async {
+    final rows = await db.select(db.payrollDayRows).get();
+    return {for (final r in rows) r.day: r.wage};
+  }
+
+  /// [listPayrollDayWages] 的流版本（统计页改了某一天的加项后要立刻重算）。
+  Stream<Map<int, double>> watchPayrollDayWages() => db
+      .select(db.payrollDayRows)
+      .watch()
+      .map((rows) => {for (final r in rows) r.day: r.wage});
+
+  /// 记一个月的实发。[actual] 可空（只写备注也算一条）；不传 [note] 等于把备注
+  /// 清掉（两列都用 [Value] 显式写，否则保留旧值 —— 与「覆盖即全部重述」一致）。
+  Future<void> savePayrollRecord({
+    required int year,
+    required int month,
+    double? actual,
+    String? note,
+  }) async {
+    await db.into(db.payrollRecordRows).insertOnConflictUpdate(
+          PayrollRecordRowsCompanion.insert(
+            year: year,
+            month: month,
+            actual: Value(actual),
+            note: Value(note),
+          ),
+        );
+  }
+
+  Future<void> deletePayrollRecord(int year, int month) async {
+    await (db.delete(db.payrollRecordRows)
+          ..where((t) => t.year.equals(year) & t.month.equals(month)))
+        .go();
+  }
+
+  /// 发薪记录，**按年月倒序**（新月份在前）。
+  Future<List<PayrollRecordRow>> listPayrollRecords() {
+    final q = db.select(db.payrollRecordRows)
+      ..orderBy([
+        (t) => OrderingTerm.desc(t.year),
+        (t) => OrderingTerm.desc(t.month),
+      ]);
+    return q.get();
+  }
+
+  Stream<List<PayrollRecordRow>> watchPayrollRecords() =>
+      (db.select(db.payrollRecordRows)
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.year),
+              (t) => OrderingTerm.desc(t.month),
+            ]))
+          .watch();
 
   /// 所有排班方案（按 id 升序）。
   Future<List<ShiftScheduleRow>> listSchedules() {
@@ -637,7 +760,7 @@ class AppRepository {
     required String name,
     required DateTime anchorDate,
     required List<ShiftClass> classes,
-    required List<int> cycle,
+    required List<List<int>> cycle,
     bool makeCurrent = true,
     int teamCount = 4,
     List<String> teamNames = const ['一班', '二班', '三班', '四班'],
@@ -789,15 +912,16 @@ class AppRepository {
       }
 
       for (var i = 0; i < cycle.length; i++) {
-        final ci = cycle[i];
-        if (ci < 0 || ci >= classIds.length) continue;
-        await db.into(db.shiftCycleRows).insert(
-              ShiftCycleRowsCompanion.insert(
-                scheduleId: id,
-                order: i,
-                classId: classIds[ci],
-              ),
-            );
+        for (final ci in cycle[i]) {
+          if (ci < 0 || ci >= classIds.length) continue;
+          await db.into(db.shiftCycleRows).insert(
+            ShiftCycleRowsCompanion.insert(
+              scheduleId: id,
+              order: i,
+              classId: classIds[ci],
+            ),
+          );
+        }
       }
 
       // 按月段表：同一个口径（`classIndex` → classId），越界跳过。
@@ -1408,3 +1532,18 @@ final shiftAlarmOverridesProvider = StreamProvider<Map<int, bool>>((ref) {
       .watch()
       .map((rows) => {for (final r in rows) r.day: r.enabled});
 });
+
+// ---------------------------------------------------------------------------
+// 统计与薪资
+// ---------------------------------------------------------------------------
+
+/// 薪资设置（库里的单例行）。用流而不是 FutureProvider：右上角那个设置层改完，
+/// 汇总卡要立刻重算。
+final payrollConfigProvider = StreamProvider<PayrollConfig>(
+    (ref) => ref.watch(appRepositoryProvider).watchPayrollConfig());
+
+final payrollDayWagesProvider = StreamProvider<Map<int, double>>(
+    (ref) => ref.watch(appRepositoryProvider).watchPayrollDayWages());
+
+final payrollRecordsProvider = StreamProvider<List<PayrollRecordRow>>(
+    (ref) => ref.watch(appRepositoryProvider).watchPayrollRecords());

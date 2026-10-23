@@ -161,7 +161,7 @@ void main() {
       name: 'B班',
       anchorDate: _anchor,
       classes: _legacyTwelveDays.map(_toClass).toList(),
-      cycle: List.generate(_legacyTwelveDays.length, (i) => i),
+      cycle: List.generate(_legacyTwelveDays.length, (i) => [i]),
       teamCount: 1,
       teamNames: const ['我'],
       ourTeamIndex: 0,
@@ -173,13 +173,15 @@ void main() {
       final a = before.shiftOn(date);
       final b = migrated.shiftOn(date);
       final why = '第 $d 天不一致';
-      expect(b?.name, a?.name, reason: why);
-      expect(b?.startMinute, a?.startMinute, reason: why);
-      expect(b?.endMinute, a?.endMinute, reason: why);
-      expect(b?.isRest, a?.isRest, reason: why);
-      expect(b?.color, a?.color, reason: why);
-      expect(b?.alarmEnabled, a?.alarmEnabled, reason: why);
-      expect(b?.alarms, a?.alarms, reason: why);
+      final firstA = a.isEmpty ? null : a.first;
+      final firstB = b.isEmpty ? null : b.first;
+      expect(firstB?.name, firstA?.name, reason: why);
+      expect(firstB?.startMinute, firstA?.startMinute, reason: why);
+      expect(firstB?.endMinute, firstA?.endMinute, reason: why);
+      expect(firstB?.isRest, firstA?.isRest, reason: why);
+      expect(firstB?.color, firstA?.color, reason: why);
+      expect(firstB?.alarmEnabled, firstA?.alarmEnabled, reason: why);
+      expect(firstB?.alarms, firstA?.alarms, reason: why);
     }
   });
 

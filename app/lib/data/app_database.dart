@@ -75,6 +75,13 @@ class ShiftClassRows extends Table {
   BoolColumn get isRest => boolean().withDefault(const Constant(false))();
   IntColumn get color => integer().withDefault(const Constant(0xFF5B7FFF))();
   BoolColumn get alarmEnabled => boolean().withDefault(const Constant(false))();
+
+  /// 额外时段（多时段班次）：`600-720,1200-1320` 格式（分钟自午夜，允许 ≥ 1440）。
+  ///
+  /// 与 [startMinute]/[endMinute] 并存而**不取代**它们：那两列是「主时段」，也是
+  /// 闹钟锚点与班次标签的依据；这里是「除了主时段之外还上的那几段」。存字符串
+  /// 而不是拆成一张表，因为没有任何东西引用单段（不按段覆盖、不按段排闹钟）。
+  TextColumn get extraSegments => text().withDefault(const Constant(''))();
   // `alarm_minute` 在 v10 迁进 `ShiftClassAlarms` 后从本表删掉了（见 onUpgrade
   // 的 `from < 10` 分支与 TableMigration）—— 不留死列，免得下一个人从两个来源里
   // 挑错那个。
@@ -296,6 +303,54 @@ class RecurringSeriesRows extends Table {
   DateTimeColumn get createdAt => dateTime()();
 }
 
+/// 工资设置表：**只有一行**。
+///
+/// [id] 自增但从不用于查询 —— 写入一律走「删掉全部再插一行」的 upsert（配置表
+/// 只有一行，比 `INSERT OR REPLACE` 直白，也不会漏掉默认值）。
+class PayrollSettingsRows extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 月薪（元/月）。0 = 还没设过（统计页据此显示指路文案，而不是满屏 ¥0.00）。
+  ///
+  /// **包月制**（v0.12.3）：出勤天数不改变这笔钱；加班 / 双倍工资那天走
+  /// [PayrollDayRows] 单独加一笔。历史 v16 的 `daily_wage` / `daily_subsidy` 两列
+  /// 在 v17 迁移里已删（见 [MigrationStrategy.onUpgrade]）。
+  RealColumn get monthlyWage => real().withDefault(const Constant(0))();
+}
+
+/// 单日加项表：某天的加班 / 双倍工资，在月薪之外额外加一笔。
+///
+/// [day] 与 [ShiftDayOverrides.day] 同一个口径：纯日期自 epoch 的天数（`dayNumber()`）。
+/// 删掉这一行即回到「这天没有额外加项」—— 不是记 0。
+///
+/// 列名仍叫 `wage`（v16 遗留）：语义从「替换固定日薪」变成「在月薪之外加一笔」，
+/// 但改列名会牵动读写两侧与全部测试，v17 只改注释不改列名（老数据在迁移里已清空，
+/// 语义不再被旧数据污染）。
+class PayrollDayRows extends Table {
+  IntColumn get day => integer()();
+  RealColumn get wage => real()();
+
+  @override
+  Set<Column> get primaryKey => {day};
+}
+
+/// 发薪记录表：每月一条，记实际发了多少。可与系统算出的应发不同 —— 扣款、
+/// 补贴补发、跨月结算这些都不进引擎，只在这记一笔。
+///
+/// 复合主键 `{year, month}`：一个月只能有一条，编辑即覆盖。
+class PayrollRecordRows extends Table {
+  IntColumn get year => integer()();
+  IntColumn get month => integer()();
+
+  /// 实发金额；null = 还没记（统计页显示「未记」而不是 0）。
+  RealColumn get actual => real().nullable()();
+
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {year, month};
+}
+
 @DriftDatabase(tables: [
   ShiftScheduleRows,
   ScheduleSpanRows,
@@ -309,6 +364,9 @@ class RecurringSeriesRows extends Table {
   ShiftDayOverrides,
   CustomTemplates,
   RecurringSeriesRows,
+  PayrollSettingsRows,
+  PayrollDayRows,
+  PayrollRecordRows,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(name: 'shiftassistantpro'));
@@ -317,12 +375,43 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 17) {
+            // 薪资模型改包月制：删 `daily_wage` / `daily_subsidy` 两列，加
+            // `monthly_wage` 一列（v0.12.3，用户拍板「清空重填」）。
+            //
+            // v16 才加的三张表，老数据本来就要清空，所以直接 DROP + CREATE 而不是
+            // `TableMigration` 重建 —— 后者会保留旧行，还要额外 DELETE，不如一步到位。
+            // `payroll_day_rows` 表名列名不变，只改语义（「替换日薪」→「加项」），
+            // 但金额是按旧口径填的、留下来会算飞，所以清空。
+            // `payroll_record_rows`（实发记录）与薪资模型无关，不动。
+            await customStatement('DROP TABLE payroll_settings_rows');
+            await m.createTable(payrollSettingsRows);
+            await customStatement('DELETE FROM payroll_day_rows');
+          }
+          if (from < 16) {
+            // 统计与薪资：三张新表，一行既有数据都不碰。
+            await m.createTable(payrollSettingsRows);
+            await m.createTable(payrollDayRows);
+            await m.createTable(payrollRecordRows);
+          }
+          if (from < 15) {
+            // 班次多时段：给班次表加一列 NOT NULL DEFAULT ''。
+            //
+            // ⚠️ **`shift_class_rows` 只有 v6 及以后才有**（它是 `from < 6` 那段
+            // 建的，而那段排在**后面**跑）。从 v5 及更早升上来时这里它还不存在，
+            // 硬加会抛 `no such table: shift_class_rows` —— 那种老库由 `from < 6`
+            // 直接按**当前 schema** 建表，新列自带。先判版本再动手（照 v10 / v13
+            // 两次的先例）。
+            if (from >= 6) {
+              await m.addColumn(shiftClassRows, shiftClassRows.extraSegments);
+            }
+          }
           if (from < 14) {
             // 按月排班：**纯新增**，一行既有数据都不碰。
             //

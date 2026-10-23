@@ -45,11 +45,31 @@ CREATE TABLE custom_templates (
 )
 ''';
 
+/// 班次定义表（v6 建的那张）。fixture 只建「迁移分支会碰到的表」，而 v15 那段会
+/// `addColumn shift_class_rows.extra_segments` —— 真实 v11 库一定有它，fixture
+/// 就得有（同上 `custom_templates` 的那一条）。**故意不带** `extra_segments`
+/// ：那一列正是这条迁移要加上去的。
+const _v11ShiftClassTable = '''
+CREATE TABLE shift_class_rows (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  schedule_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  abbr TEXT,
+  start_minute INTEGER,
+  end_minute INTEGER,
+  is_rest INTEGER NOT NULL DEFAULT 0,
+  color INTEGER NOT NULL DEFAULT 4284186623,
+  alarm_enabled INTEGER NOT NULL DEFAULT 0
+)
+''';
+
 void main() {
   test('v11 → 最新：老方案原样、段表建了但是空的', () async {
     final raw = sqlite3.sqlite3.openInMemory();
     raw.execute(_v11ScheduleTable);
     raw.execute(_v11CustomTemplates);
+    raw.execute(_v11ShiftClassTable);
     raw.execute(
       'INSERT INTO shift_schedule_rows '
       '(id, name, anchor_date, is_current, team_count, team_names, '

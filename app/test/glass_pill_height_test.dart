@@ -60,7 +60,7 @@ void main() {
           ShiftClass(name: '白班', abbr: '白'),
           ShiftClass(name: '休班', abbr: '休'),
         ],
-        cycle: const [0, 0, 1],
+        cycle: const [[0], [0], [1]],
       ),
       name: '我的模板',
     ));

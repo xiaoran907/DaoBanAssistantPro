@@ -763,6 +763,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     // 「网格 / 信息卡 / 本月统计 / 已调班」全都只认它，不再认「当前方案」。
     final chain = scheduleAsync.valueOrNull?.chain;
     ref.watch(appSettingsProvider.select((s) => s.language)); // 语言切换时重建（**只订阅语言** —— 全量 watch 会让拨触觉开关也白重建整页）
+    ref.watch(appSettingsProvider.select((s) => s.showLunarDay)); // 农历开关切换时重建
 
     return Scaffold(
       // 玻璃要有东西可透（见 `FlowingBackground`）：底色仍是主题给的那块平坦中性色，
@@ -1197,8 +1198,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
 
     final hasOverride =
         days.any((d) => schedule.dayOverrides.containsKey(dayNumber(d)));
-    final current =
-        days.length == 1 ? schedule.shiftOn(days.single) : null;
+    final currentShifts = days.length == 1 ? schedule.shiftOn(days.single) : [];
+    final current = currentShifts.isEmpty ? null : currentShifts.first;
 
     final choice = await showShiftOverridePicker(
       context,
@@ -1812,7 +1813,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           // 真值：空白表（跟随法定节假日）那套没有班次定义，这里就是 null ——
           // 格子只画日期与农历，**不替它断言今天上不上班**（v0.9.16 用户反馈）。
           // 「有没有班表在管」是另一件事，由 `chain.hasScheduleOn` 回答。
-          chain?.shiftOn(date),
+          (chain?.shiftOn(date) ?? const []).firstOrNull,
           lunarOf(date),
           cellW,
           cellH,
@@ -1941,6 +1942,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       ),
     );
 
+    final showLunarDay = ref.read(appSettingsProvider).showLunarDay;
     final children = <Widget>[dateLine];
     if (shift != null) {
       children.add(const SizedBox(height: AppTokens.gapHair));
@@ -1952,7 +1954,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                 clipBehavior: Clip.none,
                 children: [
                   _shiftChip(context, shift, s, solid,
-                      ValueKey('day-chip-${date.day}')),
+                      ValueKey('day-chip-${date.day}'),
+                      showLunarDay),
                   // 右上角那个点 = 这天被单独调过班（`day-adjusted-N`）。
                   //
                   // **左上角那个「有闹钟」的点 v0.11.20 又去掉了**：用户装上
@@ -1977,7 +1980,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               // 外层再怎么缩也变不回来（农历那一行的原话见 `lunarLine` 上面）。
               fit: BoxFit.scaleDown,
               child: Text(
-                shift.shortLabel,
+                shift.timeRangeText,
                 // 窄到画不出胶囊时的退路：班次色是给色块用的强色，当文字色太浅
                 // （橙 2.06:1、灰 2.60:1），要按格子底色算一版可读的。
                 maxLines: 1,
@@ -1987,9 +1990,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               ),
             ));
     }
-    children
-      ..add(const SizedBox(height: AppTokens.gapHair))
-      ..add(lunarLine);
+    if (showLunarDay) {
+      children
+        ..add(const SizedBox(height: AppTokens.gapHair))
+        ..add(lunarLine);
+    }
 
     // 内容那一层（日期 + 班次胶囊 + 农历）。抽出来是为了让「挤那一下」能套在它外面。
     final Widget fittedContent = FittedBox(
@@ -2076,7 +2081,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   /// —— 两个候选（`inkFor` 与 `onSolid`）各自在对应底色上可读，中间态可接受，
   /// 而 Color.lerp 两个可读色反而会穿过不可读区。
   Widget _shiftChip(BuildContext context, ShiftClass shift, double s,
-      bool solid, Key key) {
+      bool solid, Key key, bool showLunarDay) {
     final color = Color(shift.color);
     final fill = solid ? 1.0 : 0.14;
     final ink = solid
@@ -2086,7 +2091,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             Color.alphaBlend(
                 color.withValues(alpha: fill),
                 Theme.of(context).colorScheme.surface));
-    final label = shift.shortLabel;
+    final label = shift.timeRangeText;
 
     return AnimatedContainer(
       key: key,
@@ -2405,7 +2410,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     // 别退回「给空白表合成一个班次」那一版（v0.9.15 试过）：那是拿显示去迁就判据。
     // 「有没有班表在管」是**另一件事**，由 `chain.hasScheduleOn` 回答（只有
     // 「整月没有任何班表」时才写「这段时间没有排班」）。
-    final shift = chain?.shiftOn(_selected);
+    final shiftList = chain?.shiftOn(_selected) ?? const [];
+    final shift = shiftList.firstOrNull;
     final isToday = _selected == dateOnly(DateTime.now());
     final muted = AppTokens.inkMuted(context);
     final accent = shift != null
@@ -2886,7 +2892,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final chips = <Widget>[];
     for (var i = 0; i < schedule.teamCount; i++) {
       if (i == schedule.ourTeamIndex) continue;
-      final t = schedule.teamShift(i, date);
+      final tList = schedule.teamShift(i, date);
+      final t = tList.firstOrNull;
       if (t == null) continue;
       final name = i < schedule.teamNames.length
           ? schedule.teamNames[i]

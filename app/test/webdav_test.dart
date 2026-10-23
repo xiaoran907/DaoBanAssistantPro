@@ -32,6 +32,7 @@ class _StubDavServer {
   final Set<String> dirs = {};
 
   String? forcedRealm; // 非空时要求 Basic 认证（账号 u / 密码 correct-pass）
+  int? forcedStatus;   // 非空时所有请求都强制返回该 HTTP 状态（优先于其他分支）
 
   _StubDavServer._(this._server);
 
@@ -68,6 +69,12 @@ class _StubDavServer {
         await req.response.close();
         return;
       }
+    }
+
+    if (forcedStatus != null) {
+      req.response.statusCode = forcedStatus!;
+      await req.response.close();
+      return;
     }
 
     final path = Uri.decodeComponent(req.uri.path);
@@ -179,6 +186,34 @@ void main() {
       expect(fnv1a64Hex('abc'), fnv1a64Hex('abc'));
       expect(fnv1a64Hex('abc'), isNot(fnv1a64Hex('abd')));
     });
+
+    test('非 2xx 非 401/403 → WebDavException 带 status', () async {
+      dav.forcedStatus = 400;
+      final client =
+          WebDavClient(baseUrl: dav.baseUrl, user: 'u', password: 'p');
+      await expectLater(
+        client.stat('/f.json'),
+        throwsA(
+          isA<WebDavException>().having((e) => e.status, 'status', 400),
+        ),
+      );
+    });
+
+    test('连接被拒（无服务器）→ WebDavNetworkException(kind: other)', () async {
+      // 端口 1 在 Linux / Android 上永远无监听，稳定触发 Connection refused。
+      final client = WebDavClient(
+        baseUrl: 'http://127.0.0.1:1/dav/',
+        user: 'u',
+        password: 'p',
+      );
+      await expectLater(
+        client.stat('/f.json'),
+        throwsA(
+          isA<WebDavNetworkException>()
+              .having((e) => e.kind, 'kind', WebDavNetworkKind.other),
+        ),
+      );
+    });
   });
 
   group('WebDavSync', () {
@@ -261,19 +296,19 @@ void main() {
       addTearDown(db2.close);
       final repo2 = AppRepository(db2);
       await repo2.ensureSeeded();
-      await repo2.setPayrollConfig(const PayrollConfig(dailyWage: 999));
+      await repo2.setPayrollConfig(const PayrollConfig(monthlyWage: 999));
       dav.putRemote(remotePath,
           await buildBackupJson(db2, prefs: sp, appVersion: '0.12.2'));
 
       final result = await run();
       expect(result.outcome, WebDavSyncOutcome.downloaded);
-      expect((await repo.getPayrollConfig()).dailyWage, 999,
+      expect((await repo.getPayrollConfig()).monthlyWage, 999,
           reason: '云端那份落进了本地库');
     });
 
     test('只本机变了 → 上传', () async {
       await run();
-      await repo.setPayrollConfig(const PayrollConfig(dailyWage: 320));
+      await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
       final result = await run();
       expect(result.outcome, WebDavSyncOutcome.uploaded);
       expect(dav.files[remotePath]!.body.contains('payroll_settings_rows'), isTrue);
@@ -289,7 +324,7 @@ void main() {
       await repo2.ensureSeeded();
       dav.putRemote(remotePath,
           await buildBackupJson(db2, prefs: sp, appVersion: '0.12.2'));
-      await repo.setPayrollConfig(const PayrollConfig(dailyWage: 320));
+      await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
 
       // 自动路径：冲突原样返回，云端与本机都没被动。
       final auto = await run();
@@ -313,7 +348,7 @@ void main() {
       );
     });
 
-    test('连不上服务器 → error（不抛异常）', () async {
+    test('连不上服务器 → error，分档为 network:other', () async {
       await const WebDavConfig(
         server: 'http://127.0.0.1:1/dav/',
         user: 'u',
@@ -323,6 +358,17 @@ void main() {
       final result = await WebDavSync(passwords: _MemPasswords())
           .run(db: db, sp: sp);
       expect(result.outcome, WebDavSyncOutcome.error);
+      expect(result.error, 'network:other',
+          reason: '连接被拒归 other —— 用户看到「连不上服务器」那句');
+    });
+
+    test('服务器拒返（HTTP 400）→ error，分档为 http:400', () async {
+      dav.forcedStatus = 400;
+      final result = await WebDavSync(passwords: _MemPasswords())
+          .run(db: db, sp: sp);
+      expect(result.outcome, WebDavSyncOutcome.error);
+      expect(result.error, 'http:400',
+          reason: 'HTTP 层非 2xx 带状态码 —— UI 直接报「服务器拒返（HTTP 400）」');
     });
   });
 }

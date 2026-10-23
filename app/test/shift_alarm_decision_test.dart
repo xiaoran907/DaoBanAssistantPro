@@ -49,7 +49,7 @@ ShiftSchedule _schedule({Map<int, int> overrides = const {}}) => ShiftSchedule(
             alarms: [ShiftAlarm(minute: 19 * 60 + 30)]),
         ShiftClass(id: 13, name: '休班', abbr: '休', isRest: true),
       ],
-      cycle: const [0, 2],
+      cycle: const [[0], [2]],
       teamCount: 1,
       teamNames: const ['我'],
       teamOffsets: const [0],
@@ -78,7 +78,7 @@ ShiftSchedule _nightOnlySchedule(
                 ? const []
                 : [ShiftAlarm(minute: alarmMinute)]),
       ],
-      cycle: const [0],
+      cycle: const [[0]],
       teamCount: 1,
       teamNames: const ['我'],
       teamOffsets: const [0],
@@ -227,7 +227,7 @@ void main() {
               ],
             ),
           ],
-          cycle: const [0],
+          cycle: const [[0]],
           teamCount: 1,
           teamNames: const ['我'],
           teamOffsets: const [0],
@@ -263,7 +263,7 @@ void main() {
             ],
           ),
         ],
-        cycle: const [0],
+        cycle: const [[0]],
         teamCount: 1,
         teamNames: const ['我'],
         teamOffsets: const [0],
@@ -419,7 +419,7 @@ void main() {
                 alarms: const [ShiftAlarm(minute: 420)]),
             ShiftClass(name: '$name-休', abbr: '休', isRest: true),
           ],
-          cycle: const [0, 1],
+          cycle: const [[0], [1]],
         );
 
     /// A 管到 6/29、B 从 6/30 起 —— 边界落在窗口中间。

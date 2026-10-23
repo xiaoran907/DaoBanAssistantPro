@@ -13,6 +13,7 @@
 //    `/倒班助手Pro/` 这一级必须先建好（405 = 已存在，照成功处理）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,9 +26,13 @@ class WebDavItem {
 }
 
 class WebDavException implements Exception {
-  const WebDavException(this.message, {this.status});
+  const WebDavException(this.message, {this.status, this.cause});
   final String message;
   final int? status;
+
+  /// 网络层异常时指向底层的 `SocketException` / `HandshakeException` / 其他
+  /// —— 保留它，方便把具体错误信息透到 UI 上（用户拿得到真实报错文本）。
+  final Object? cause;
 
   @override
   String toString() => 'WebDavException($status): $message';
@@ -41,6 +46,67 @@ class WebDavAuthException extends WebDavException {
 /// 404：远程还没有这个文件（首次同步的正常状态，不算错误）。
 class WebDavNotFoundException extends WebDavException {
   const WebDavNotFoundException() : super('远程不存在', status: 404);
+}
+
+/// 网络层的失败分档。用户从「连不上服务器」这句话里永远推不出是哪一类，
+/// 分档之后 UI 能把话讲清楚：地址错、证书被拦、请求超时、还是别的。
+enum WebDavNetworkKind {
+  /// DNS 解析失败：地址写错、域名不存在。
+  dns,
+
+  /// TLS 握手失败：证书链不全、被企业代理重签、系统 CA 不含签发者。
+  tls,
+
+  /// 请求超时：链路慢、代理黑洞、服务端未响应。
+  timeout,
+
+  /// 其他：连接被拒、连接重置、代理拒绝、未知 socket 错误。
+  other,
+}
+
+/// 网络层失败（区别于 HTTP 层非 2xx）。
+///
+/// HTTP 层错误走 [WebDavException] 且带 `status`；这里的场景是**根本没拿到
+/// HTTP 响应**，用户看到的必须是「连不上」这一类，且能区分是哪种。
+class WebDavNetworkException extends WebDavException {
+  const WebDavNetworkException(
+    this.kind,
+    String message, {
+    required super.cause,
+  }) : super(message);
+
+  final WebDavNetworkKind kind;
+
+  @override
+  String toString() => 'WebDavNetworkException(${kind.name}): '
+      '${cause?.toString() ?? 'network error'}';
+}
+
+/// 把 `SocketException` / `HandshakeException` / `TimeoutException` 归到
+/// [WebDavNetworkKind]。关键字来自 Android / iOS 的 socket 层报错文本，
+/// 拿不准就归到 `other`，不瞎分。
+WebDavNetworkKind classifyNetworkError(Object e) {
+  final msg = e.toString().toLowerCase();
+  if (e is TimeoutException) return WebDavNetworkKind.timeout;
+  if (e is HandshakeException) return WebDavNetworkKind.tls;
+  if (e is SocketException || e is HttpException || e is TlsException) {
+    if (msg.contains('certificate') ||
+        msg.contains('ssl') ||
+        msg.contains('tls') ||
+        msg.contains('handshake') ||
+        msg.contains('x509')) {
+      return WebDavNetworkKind.tls;
+    }
+    if (msg.contains('getsocketinfo') ||
+        msg.contains('name or service not known') ||
+        msg.contains('getaddrinfo') ||
+        msg.contains('unknown name') ||
+        msg.contains('no route to host') ||
+        msg.contains('网络不可达')) {
+      return WebDavNetworkKind.dns;
+    }
+  }
+  return WebDavNetworkKind.other;
 }
 
 class WebDavClient {
@@ -89,24 +155,47 @@ class WebDavClient {
     Map<String, String>? headers,
     Object? body,
   }) async {
-    final request = await _http.openUrl(method, uri);
-    _auth(request.headers);
-    headers?.forEach(request.headers.set);
-    if (body != null) {
-      request.headers.contentType =
-          ContentType('application', 'octet-stream', charset: 'utf-8');
-      request.add(utf8.encode(body as String));
+    try {
+      final request = await _http.openUrl(method, uri);
+      _auth(request.headers);
+      headers?.forEach(request.headers.set);
+      if (body != null) {
+        request.headers.contentType =
+            ContentType('application', 'octet-stream', charset: 'utf-8');
+        request.add(utf8.encode(body as String));
+      }
+      final response =
+          await request.close().timeout(_timeout);
+      final text = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_timeout);
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw WebDavAuthException(status: response.statusCode);
+      }
+      return (response.statusCode, text, response.headers);
+    } on WebDavException {
+      // 401/403 已经包装成 [WebDavAuthException]，直接抛。
+      rethrow;
+    } on TimeoutException catch (e) {
+      throw WebDavNetworkException(
+        WebDavNetworkKind.timeout,
+        '连接超时（${_timeout.inSeconds} 秒未响应）',
+        cause: e,
+      );
+    } on HandshakeException catch (e) {
+      throw WebDavNetworkException(
+          WebDavNetworkKind.tls, e.message, cause: e);
+    } on TlsException catch (e) {
+      throw WebDavNetworkException(
+          classifyNetworkError(e), e.message, cause: e);
+    } on SocketException catch (e) {
+      throw WebDavNetworkException(
+          classifyNetworkError(e), e.message, cause: e);
+    } on HttpException catch (e) {
+      throw WebDavNetworkException(
+          classifyNetworkError(e), e.message, cause: e);
     }
-    final response =
-        await request.close().timeout(_timeout);
-    final text = await response
-        .transform(utf8.decoder)
-        .join()
-        .timeout(_timeout);
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw WebDavAuthException(status: response.statusCode);
-    }
-    return (response.statusCode, text, response.headers);
   }
 
   /// 远程文件（或目录）的属性；404 → null。

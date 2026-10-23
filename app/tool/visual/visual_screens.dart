@@ -187,7 +187,7 @@ final List<VisualScreen> visualScreens = [
         schedule: schedule,
         from: today,
         to: today,
-        currentClass: hasOverride ? schedule.shiftOn(today) : null,
+        currentClass: hasOverride ? schedule.shiftOn(today).firstOrNull : null,
         canRestore: hasOverride,
       );
     },

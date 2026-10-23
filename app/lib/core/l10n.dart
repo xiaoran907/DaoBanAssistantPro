@@ -49,6 +49,10 @@ class L10n {
   static String get navCalendar => t('日历', 'Calendar');
   static String get navAlarm => t('闹钟', 'Alarm');
   static String get navTodo => t('待办', 'Todo');
+
+  /// 底栏第 5 个 tab（v0.12.3，插在待办与我的之间）。
+  static String get navSalary => t('薪资', 'Salary');
+
   static String get navProfile => t('我的', 'Me');
 
   // 页面标题
@@ -60,6 +64,9 @@ class L10n {
   static String get sectionAppearance => t('外观', 'Appearance');
   static String get sectionDesktop => t('桌面', 'Home screen');
   static String get sectionSchedule => t('排班', 'Schedule');
+  // 统计是排班的产物，紧跟在「排班」后面；「云同步」不另起分区，
+  // 它和「清空重置」同为数据管理，合进「数据」那一张卡里。
+  static String get sectionStats => t('统计与薪资', 'Stats & payroll');
   static String get sectionAlarm => t('闹钟', 'Alarm');
   static String get sectionData => t('数据', 'Data');
   static String get sectionPermission => t('权限', 'Permissions');
@@ -1055,6 +1062,11 @@ class L10n {
       'A light buzz when a switch flips, a selection changes, or you drag-select '
           'and apply a day change (plain taps stay still)');
 
+  static String get settingShowLunarDay => t('显示农历', 'Show lunar calendar');
+  static String get settingShowLunarDayHint => t(
+      '日历格子与桌面小组件显示农历',
+      'Show lunar date on calendar cells and desktop widgets');
+
   // 日期格式
   // 英文下月份要带出来：`yyyy M` 会渲染成「2026 9」，读不出是哪个月。
   // 用缩写月（Sep 2026）而不是全称，跟中文「2026年9月」的紧凑度对齐，
@@ -1085,4 +1097,162 @@ class L10n {
   static String get widgetDayAfter => t('后天', 'Day after');
   static String get widgetEmptyHint =>
       t('还没有排班，点一下去设置', 'No schedule yet — tap to set up');
+
+  // 统计与薪资（「我的」→ 统计与薪资）。
+  //
+  // 金额格式化在 `domain/payroll.dart` 的 `formatMoney` / `moneyText`，本文件
+  // 只管标签与提示；那边 import 本文件，这边不能反向 import 它（会成环）。
+  // ⚠️ `$n` 后面**必须留空格**：汉字是合法标识符字符，`出勤$n天` 会被当成变量
+  // `n天` 解析掉（既有 `adjustedDays` 那条也是同一个写法）。
+  static String get titleStats => t('统计与薪资', 'Stats & payroll');
+
+  /// 「我的」页那一行。
+  static String get statsEntrySubtitle => t(
+      '按班算出应发、再记实际发了多少',
+      'Payable by shift, plus what you were actually paid');
+
+  /// 货币符号中英同字符：这个 app 面向国内倒班场景，英文档也用 ¥
+  /// （`moneyText` 就靠它拼前缀，`payroll_engine_test` 断言 `moneyText(320)=='¥320.00'`）。
+  static String get currencySymbol => t('¥', '¥');
+
+  static String get statsModeMonth => t('月度', 'Monthly');
+  static String get statsModeYear => t('年度', 'Yearly');
+
+  // 工资设置：月薪一个框，右上角那颗齿轮。
+  static String get statsWageSettings => t('月薪设置', 'Monthly wage settings');
+  static String get statsMonthlyWage => t('月薪', 'Monthly wage');
+  static String get invalidAmount => t('金额格式不对', 'Invalid amount');
+  static String get extraSet => t('已设置加项', 'Extra set');
+  static String dayExtraCleared(int n) =>
+      t('已清除 $n 天的加项', '$n extra day(s) cleared');
+
+  // 单日加项那一层：标题带日期（复用 [monthDay]），留空即回到「这天没有加项」。
+  static String dayExtraDialogTitle(DateTime d) =>
+      t('${monthDay(d)} 加项', '${monthDay(d)} extra');
+  static String get statsDayExtraField =>
+      t('当天加项', "That day's extra");
+  static String get statsDayExtraHint => t(
+      '留空 = 这天没有额外加项', 'Leave blank to clear the extra');
+  static String get statsClearExtra => t('清除加项', 'Clear extra');
+
+  // 汇总卡。
+  static String get statsPayable => t('应发合计', 'Payable total');
+
+  /// 包月制下的加项合计（v0.12.3）。
+  static String get statsExtraTotal => t('加班加项合计', 'Extra total');
+
+  /// 单日行上的「加项」标记。
+  static String get statsExtraBadge => t('加项', 'Extra');
+  static String get statsByShift => t('按班次', 'By shift');
+  static String get statsMonthEmpty => t('本月没有出勤', 'No attendance this month');
+  static String workedDaysCount(int n) =>
+      t('出勤 $n 天', '$n working days');
+
+  // 没设过月薪时不画满屏 ¥0.00 —— 给一句指路。
+  static String get statsWageUnset => t('还没设过月薪', 'No monthly wage set yet');
+
+  // 按日出勤列表。
+  static String get statsDayListTitle => t('按日出勤', 'Attendance by day');
+  static String get statsColWorked => t('出勤', 'Days');
+  static String get statsColPayable => t('应发', 'Payable');
+  static String get statsColPaid => t('实发', 'Paid');
+  static String get statsYearTotal => t('全年合计', 'Year total');
+
+  // 发薪记录：按月登记实际发了多少（可与系统算出的应发不同）。
+  static String get statsPayrollSection => t('发薪记录', 'Payroll record');
+  static String get statsActualAmount => t('实发金额', 'Actual paid');
+  static String get statsActualNote => t('备注', 'Note');
+  static String get statsClearRecord => t('清除记录', 'Clear record');
+  static String get statsActualPaid => t('实发', 'Actual paid');
+  static String get statsPayrollEmpty => t('还没记实发', 'No actual paid recorded yet');
+  static String get statsNotRecorded => t('未记', '—');
+  static String recordSaved(String month) =>
+      t('已记录 $month 的实发', '$month actual paid saved');
+  static String recordCleared(String month) =>
+      t('已清除 $month 的实发记录', '$month payroll record cleared');
+
+  // WebDAV 云同步（「我的」→ 数据 → 云同步）。
+  //
+  // 密码不进备份、不进日志：走 `flutter_secure_storage`（Android 用 Keystore 加密），
+  // 配置本身走 SharedPreferences。`webdavPasswordHint` 就是那句让用户安心的话。
+  static String get webdavTitle => t('云同步', 'Cloud sync');
+
+  /// 「我的」页那一行。
+  static String get webdavEntrySubtitle => t(
+      '备份到你的 WebDAV，换手机也能完整还原',
+      'Back up to your WebDAV and restore everything on a new phone');
+  static String get webdavIntro => t(
+      '备份到 WebDAV 网盘，换手机也能完整导回',
+      'Back up to a WebDAV drive and restore everything on another phone');
+
+  static String get webdavServer => t('服务器地址', 'Server address');
+  static String get webdavServerHint =>
+      t('https://dav.example.com/dav', 'https://dav.example.com/dav');
+  static String get webdavUser => t('用户名', 'Username');
+  static String get webdavPassword => t('密码', 'Password');
+  static String get webdavPasswordHint => t(
+      '密码只存在本机加密存储，不会上传',
+      'Stored encrypted on this device — never uploaded');
+  static String get webdavDir => t('备份目录', 'Backup path');
+  static String get webdavDirHint => t('/backups', '/backups');
+  static String get webdavAutoSync => t('自动同步', 'Auto sync');
+  static String get webdavAutoSyncHint => t(
+      '每次打开应用时自动上传',
+      'Upload automatically whenever the app opens');
+
+  // 操作结果那一串（`_showResult` 的 switch 逐项对应）。
+  static String get webdavConfigSaved => t('已保存配置', 'Settings saved');
+  static String get webdavNotConfigured => t(
+      '先填好服务器地址和密码',
+      'Enter the server address and password first');
+  static String get webdavSyncNow => t('立即同步', 'Sync now');
+  static String get webdavSyncing => t('同步中…', 'Syncing…');
+  static String get webdavSyncedUp => t('已上传到云端', 'Uploaded to the cloud');
+  static String get webdavSyncedDown => t('已从云端恢复', 'Restored from the cloud');
+  static String get webdavNoChange => t('没有变化', 'Nothing to sync');
+  static String get webdavAuthFailed => t('账号或密码不对', 'Wrong account or password');
+  static String get webdavConnFailed => t('连不上服务器', "Can't reach the server");
+
+  // 把「连不上」拆开：用户从旧那句里推不出根因，分档之后才知道下一步做什么。
+  // 地址错 → 检查域名 / 代理；证书 → 企业网络拦了 HTTPS；超时 → 链路问题。
+  static String get webdavDnsFailed => t(
+      '服务器地址解析失败，检查域名是否正确',
+      'Cannot resolve the server address — check the host name');
+  static String get webdavTlsFailed => t(
+      '安全证书校验失败，可能已被网络拦截',
+      'TLS certificate validation failed — a network may be blocking HTTPS');
+  static String get webdavTimeout => t(
+      '连接超时，请检查网络后重试',
+      'Connection timed out — check your network and retry');
+  static String webdavServerRejected(int code) =>
+      t('服务器拒绝请求（HTTP $code）', 'Server rejected the request (HTTP $code)');
+  static String get webdavNeverSynced => t('还没同步过', 'Never synced');
+  static String webdavLastSync(String at) =>
+      t('上次同步 $at', 'Last synced $at');
+
+  // 云端比本地新时的弹层：默认不动，用户自己选。
+  static String get webdavConflictTitle => t('云端有更新', 'Newer copy in the cloud');
+  static String get webdavConflictContent => t(
+      '云端那份比你本地的新。要用云端的覆盖本地，还是保留本地？',
+      'The cloud copy is newer than your local one. Overwrite local with it, '
+          'or keep your local changes?');
+  static String get webdavKeepRemote => t('用云端的', 'Use the cloud copy');
+  static String get webdavKeepLocal => t('保留本地', 'Keep local');
+
+  // 备份导入导出（原生 SAF 通道：导出到用户挑的目录，导入从用户挑的文件）。
+  // 文件名带日期，一天多次导出也不撞名。
+  static String get exportFailed => t('导出失败', 'Export failed');
+  static String exportDone(String name) =>
+      t('已导出 $name', 'Exported $name');
+  static String get importConfirmTitle => t('导入备份', 'Import backup');
+  static String get importConfirmContent => t(
+      '导入会覆盖当前的排班、闹钟和设置',
+      'Importing replaces your current schedules, alarms and settings');
+  static String get importData => t('导入', 'Import');
+  static String get importFailed => t('导入失败', 'Import failed');
+  static String get importDone => t('已导入备份', 'Backup imported');
+  static String get importInvalidFile => t('文件格式不对', 'Invalid backup file');
+  static String importVersionTooNew(String version) => t(
+      '这个备份来自更新的应用版本（$version）',
+      'This backup comes from a newer app version ($version)');
 }

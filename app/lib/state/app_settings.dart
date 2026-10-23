@@ -47,6 +47,7 @@ class AppSettings {
     this.liquidGlass = false,
     this.hapticsEnabled = true,
     this.fontSize = AppFontSize.standard,
+    this.showLunarDay = true,
   });
 
   final AppThemeMode themeMode;
@@ -70,6 +71,9 @@ class AppSettings {
   /// 字号档位（见 [AppFontSize]）。**系统字号不参与换算。**
   final AppFontSize fontSize;
 
+  /// 显示农历：true=日历格子与桌面小组件显示农历（默认），false=不显示。
+  final bool showLunarDay;
+
   Color get accentColor => AppColors.accentPalette[accentIndex];
 
   AppSettings copyWith({
@@ -79,6 +83,7 @@ class AppSettings {
     bool? liquidGlass,
     bool? hapticsEnabled,
     AppFontSize? fontSize,
+    bool? showLunarDay,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -87,6 +92,7 @@ class AppSettings {
       liquidGlass: liquidGlass ?? this.liquidGlass,
       hapticsEnabled: hapticsEnabled ?? this.hapticsEnabled,
       fontSize: fontSize ?? this.fontSize,
+      showLunarDay: showLunarDay ?? this.showLunarDay,
     );
   }
 }
@@ -101,6 +107,12 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     _load();
   }
 
+  /// 备份还原 / WebDAV 云端覆盖本地之后，从磁盘把设置重新读一遍。
+  ///
+  /// 外观这一组值都是直接读 SharedPreferences、不跟内存里这份同步 —— 不重载的话，
+  /// 数据刚换完、界面还挂在旧主题上（看着像「导入没生效」）。
+  Future<void> reload() => _load();
+
   Future<void> _load() async {
     try {
       final sp = await SharedPreferences.getInstance();
@@ -110,6 +122,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
       final liquidGlass = sp.getBool('liquidGlass') ?? false;
       final hapticsEnabled = sp.getBool('hapticsEnabled') ?? true;
       final fontSizeName = sp.getString('fontSize');
+      final showLunarDay = sp.getBool('showLunarDay') ?? true;
       L10n.locale = language;
       liquidGlassEnabled.value = liquidGlass;
       hapticsDisabled = !hapticsEnabled;
@@ -127,6 +140,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
           (f) => f.name == fontSizeName,
           orElse: () => AppFontSize.standard,
         ),
+        showLunarDay: showLunarDay,
       );
     } catch (_) {
       // 忽略读取失败，使用默认值
@@ -180,6 +194,12 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(fontSize: size);
     final sp = await SharedPreferences.getInstance();
     await sp.setString('fontSize', size.name);
+  }
+
+  Future<void> setShowLunarDay(bool value) async {
+    state = state.copyWith(showLunarDay: value);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool('showLunarDay', value);
   }
 
   /// 把外观这一组**在内存里**拨回默认（跟随系统 / 首个主色调 / 中文 / 液态玻璃关 /

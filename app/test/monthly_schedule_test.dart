@@ -35,12 +35,12 @@ void main() {
 
   test('用户报的那个现象：12 月 1 日必须是中班，且整月切法正确', () {
     final s = monthSchedule();
-    expect(s.shiftOn(DateTime(2026, 12, 1))!.name, '中班');
-    expect(s.shiftOn(DateTime(2026, 12, 10))!.name, '中班');
-    expect(s.shiftOn(DateTime(2026, 12, 11))!.name, '白班');
-    expect(s.shiftOn(DateTime(2026, 12, 20))!.name, '白班');
-    expect(s.shiftOn(DateTime(2026, 12, 21))!.name, '夜班');
-    expect(s.shiftOn(DateTime(2026, 12, 31))!.name, '夜班');
+    expect(s.shiftOn(DateTime(2026, 12, 1)).first.name, '中班');
+    expect(s.shiftOn(DateTime(2026, 12, 10)).first.name, '中班');
+    expect(s.shiftOn(DateTime(2026, 12, 11)).first.name, '白班');
+    expect(s.shiftOn(DateTime(2026, 12, 20)).first.name, '白班');
+    expect(s.shiftOn(DateTime(2026, 12, 21)).first.name, '夜班');
+    expect(s.shiftOn(DateTime(2026, 12, 31)).first.name, '夜班');
   });
 
   test('四种月长下切法完全一样（31 / 30 / 28 / 闰年 29）', () {
@@ -54,7 +54,7 @@ void main() {
       final days = DateTime(m.year, m.month + 1, 0).day;
       for (var d = 1; d <= days; d++) {
         final want = d <= 10 ? '中班' : (d <= 20 ? '白班' : '夜班');
-        expect(s.shiftOn(DateTime(m.year, m.month, d))!.name, want,
+        expect(s.shiftOn(DateTime(m.year, m.month, d)).first.name, want,
             reason: '${m.year}-${m.month}-$d');
       }
     }
@@ -63,7 +63,7 @@ void main() {
   test('每月 1 日恒落在第一段', () {
     final s = monthSchedule();
     for (var m = 1; m <= 12; m++) {
-      expect(s.shiftOn(DateTime(2026, m, 1))!.name, '中班', reason: '$m 月');
+      expect(s.shiftOn(DateTime(2026, m, 1)).first.name, '中班', reason: '$m 月');
     }
   });
 
@@ -74,18 +74,18 @@ void main() {
       MonthlySegment(startDay: 29, classIndex: 1),
     ]);
     for (var d = 1; d <= 28; d++) {
-      expect(s.shiftOn(DateTime(2026, 2, d))!.name, '中班', reason: '2/$d');
+      expect(s.shiftOn(DateTime(2026, 2, d)).first.name, '中班', reason: '2/$d');
     }
-    expect(s.shiftOn(DateTime(2026, 1, 28))!.name, '中班');
-    expect(s.shiftOn(DateTime(2026, 1, 29))!.name, '白班');
-    expect(s.shiftOn(DateTime(2026, 1, 31))!.name, '白班');
+    expect(s.shiftOn(DateTime(2026, 1, 28)).first.name, '中班');
+    expect(s.shiftOn(DateTime(2026, 1, 29)).first.name, '白班');
+    expect(s.shiftOn(DateTime(2026, 1, 31)).first.name, '白班');
   });
 
   test('单段：整月同一个班次', () {
     final s = monthSchedule(
         segments: const [MonthlySegment(startDay: 1, classIndex: 2)]);
     for (var d = 1; d <= 31; d++) {
-      expect(s.shiftOn(DateTime(2026, 3, d))!.name, '夜班');
+      expect(s.shiftOn(DateTime(2026, 3, d)).first.name, '夜班');
     }
   });
 
@@ -119,17 +119,17 @@ void main() {
       name: '切回周期',
       anchorDate: DateTime.utc(2025, 1, 6),
       classes: const [zhong, bai],
-      cycle: const [0, 1],
+      cycle: const [[0], [1]],
       monthly: false,
       monthlySegments: threeSegs,
       teamSegOffsets: const [0, 1, 2],
     );
     expect(backToCycle.isBlank, isFalse);
-    expect(backToCycle.shiftOn(DateTime(2025, 1, 6))!.name, '中班');
-    expect(backToCycle.shiftOn(DateTime(2025, 1, 7))!.name, '白班');
-    expect(backToCycle.shiftOn(DateTime(2025, 1, 8))!.name, '中班');
+    expect(backToCycle.shiftOn(DateTime(2025, 1, 6)).first.name, '中班');
+    expect(backToCycle.shiftOn(DateTime(2025, 1, 7)).first.name, '白班');
+    expect(backToCycle.shiftOn(DateTime(2025, 1, 8)).first.name, '中班');
     // 2/6 距基准日 31 天（奇数），两天一倒 → 落在白班。走的确实是周期。
-    expect(backToCycle.shiftOn(DateTime(2025, 2, 6))!.name, '白班');
+    expect(backToCycle.shiftOn(DateTime(2025, 2, 6)).first.name, '白班');
   });
 
   // ── 班组按段错开：spec §3.3 那条推演的护栏 ────────────────────────────────
@@ -138,7 +138,7 @@ void main() {
     for (var day = DateTime(2026, 1, 1);
         day.isBefore(DateTime(2027, 1, 1));
         day = DateTime(day.year, day.month, day.day + 1)) {
-      final names = [for (var t = 0; t < 3; t++) s.teamShift(t, day)?.name];
+      final names = [for (var t = 0; t < 3; t++) s.teamShift(t, day).firstOrNull?.name];
       expect(names.whereType<String>().length, 3, reason: '$day 有人没班');
       expect(names.toSet().length, 3, reason: '$day 撞班：$names');
     }

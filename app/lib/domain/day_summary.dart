@@ -54,9 +54,10 @@ String? monthTallyFor(ScheduleChain? chain, DateTime month) {
   final counts = <String, int>{};
   final days = DateTime(month.year, month.month + 1, 0).day;
   for (var d = 1; d <= days; d++) {
-    final shift = chain.shiftOn(DateTime(month.year, month.month, d));
-    if (shift == null) continue;
-    counts.update(shift.shortLabel, (n) => n + 1, ifAbsent: () => 1);
+    final shifts = chain.shiftOn(DateTime(month.year, month.month, d));
+    for (final shift in shifts) {
+      counts.update(shift.shortLabel, (n) => n + 1, ifAbsent: () => 1);
+    }
   }
   if (counts.isEmpty) return null;
   final parts = [for (final e in counts.entries) '${e.key}${e.value}'];

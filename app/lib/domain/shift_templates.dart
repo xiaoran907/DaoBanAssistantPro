@@ -134,7 +134,7 @@ class ShiftTemplate {
   List<String> get aliases => spec.aliases;
   List<ShiftClass> get classes =>
       spec.classes.map((p) => p.toClass()).toList(growable: false);
-  List<int> get cycle => spec.cycle;
+  List<List<int>> get cycle => spec.cycle.map((ci) => [ci]).toList();
   int get cycleLength => cycle.length;
   int get teamCount => spec.teamCount;
   List<int> get teamOffsets => spec.teamOffsets;

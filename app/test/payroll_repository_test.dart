@@ -24,20 +24,18 @@ void main() {
   group('薪资设置', () {
     test('没存过 = 全 0（isUnset）', () async {
       final config = await repo.getPayrollConfig();
-      expect(config.dailyWage, 0);
-      expect(config.dailySubsidy, 0);
+      expect(config.monthlyWage, 0);
       expect(config.isUnset, isTrue);
     });
 
     test('保存后读得回来；再保存是更新不是新增一行', () async {
       await repo.setPayrollConfig(
-          const PayrollConfig(dailyWage: 320, dailySubsidy: 10));
-      expect((await repo.getPayrollConfig()).dailyWage, 320);
+          const PayrollConfig(monthlyWage: 320));
+      expect((await repo.getPayrollConfig()).monthlyWage, 320);
 
-      await repo.setPayrollConfig(const PayrollConfig(dailyWage: 350));
+      await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 350));
       final config = await repo.getPayrollConfig();
-      expect(config.dailyWage, 350);
-      expect(config.dailySubsidy, 0);
+      expect(config.monthlyWage, 350);
       expect(config.isUnset, isFalse);
 
       final rows = await db.select(db.payrollSettingsRows).get();
@@ -46,9 +44,9 @@ void main() {
 
     test('watch 流跟着保存走', () async {
       final seen = <double>[];
-      final sub = repo.watchPayrollConfig().listen((c) => seen.add(c.dailyWage));
+      final sub = repo.watchPayrollConfig().listen((c) => seen.add(c.monthlyWage));
       await Future<void>.delayed(const Duration(milliseconds: 20)); // 等首帧
-      await repo.setPayrollConfig(const PayrollConfig(dailyWage: 320));
+      await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
       await Future<void>.delayed(const Duration(milliseconds: 20));
       await sub.cancel();
       expect(seen.first, 0.0);
@@ -56,7 +54,7 @@ void main() {
     });
   });
 
-  group('按天自定义日薪', () {
+  group('单日加项', () {
     test('设 / 改 / 清，dayNumber 口径一致', () async {
       final day = DateTime.utc(2025, 1, 6);
       await repo.setPayrollDayWage(day, 640);
@@ -123,7 +121,7 @@ void main() {
   });
 
   test('backup 清空重置也清薪资三张表', () async {
-    await repo.setPayrollConfig(const PayrollConfig(dailyWage: 320));
+    await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
     await repo.setPayrollDayWage(DateTime.utc(2025, 1, 6), 640);
     await repo.savePayrollRecord(year: 2025, month: 1, actual: 5000);
     await repo.clearAll();

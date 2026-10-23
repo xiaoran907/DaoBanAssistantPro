@@ -28,6 +28,7 @@ import '../alarm/alarm_service.dart';
 import '../calendar/schedule_management_screen.dart';
 import 'app_dialogs.dart';
 import 'help_center_screen.dart';
+import 'webdav_sync_screen.dart';
 
 /// 「我的」页：外观（主题/主色调）、数据（清空重置）、关于。
 class ProfileScreen extends ConsumerWidget {
@@ -46,6 +47,7 @@ class ProfileScreen extends ConsumerWidget {
           liquidGlass: s.liquidGlass,
           hapticsEnabled: s.hapticsEnabled,
           fontSize: s.fontSize,
+          showLunarDay: s.showLunarDay,
         )));
 
     return Scaffold(
@@ -204,6 +206,30 @@ class ProfileScreen extends ConsumerWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Text(L10n.settingShowLunarDay,
+                                style: AppTokens.labelStrong),
+                            const SizedBox(height: AppTokens.gapHair),
+                            Text(L10n.settingShowLunarDayHint,
+                                style: AppTokens.microText
+                                    .copyWith(color: AppTokens.inkMuted(context))),
+                          ],
+                        ),
+                      ),
+                      GlassSwitch(
+                        value: settings.showLunarDay,
+                        onChanged: (v) => ref
+                            .read(appSettingsProvider.notifier)
+                            .setShowLunarDay(v),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(L10n.hapticFeedback,
                                 style: AppTokens.labelStrong),
                             const SizedBox(height: AppTokens.gapHair),
@@ -281,17 +307,36 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             SectionHeading(L10n.sectionData),
+            // 云同步与清空重置都是「整份数据」的事，摆一张卡里（同「闹钟」那一张：
+            // 一行一个动作，中间 `Divider(height: 1)`）。
             GlassTile(
               translucentFill: false,
               padding: EdgeInsets.zero,
-              child: GlassPressable(
-                child: ListTile(
-                  leading: const Icon(Icons.delete_sweep_outlined,
-                      color: AppTokens.danger),
-                  title: Text(L10n.clearReset),
-                  subtitle: Text(L10n.clearResetSubtitle),
-                  onTap: () => _confirmReset(context, ref),
-                ),
+              child: Column(
+                children: [
+                  GlassPressable(
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_sync_outlined),
+                      title: Text(L10n.webdavTitle),
+                      subtitle: Text(L10n.webdavEntrySubtitle),
+                      trailing: const Icon(Icons.chevron_right_outlined),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const WebDavSyncScreen()),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  GlassPressable(
+                    child: ListTile(
+                      leading: const Icon(Icons.delete_sweep_outlined,
+                          color: AppTokens.danger),
+                      title: Text(L10n.clearReset),
+                      subtitle: Text(L10n.clearResetSubtitle),
+                      onTap: () => _confirmReset(context, ref),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
