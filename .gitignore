@@ -51,3 +51,9 @@ __pycache__/
 *.pyc
 # 一次性探针（AGENTS.md：跑完即删，不入库）
 /app/tool/probe/
+# Android SDK / NDK (large binary files, must not be committed)
+*.zip
+ndk-*/
+build-tools-*/
+platform-*/
+platform-tools/
