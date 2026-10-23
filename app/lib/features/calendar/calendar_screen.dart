@@ -875,14 +875,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           return Column(
             children: [
               _header(context),
-              // **小窗（高 < 480dp）不画网格，只留今日信息卡。**
-              //
-              // 这个尺寸下两者都想要的结果是两者都看不清：200×400 的窗口里
-              // 网格只塞得下两三行格子、还被压扁，而「哪天被调过」这个标记
-              // 本来就在信息卡上 —— 卡留下、信息就齐了。
-              // 各机型小窗的默认尺寸 400×640 高 640 > 480，**不受影响**。
+              // v0.13：删今日信息卡，信息合并到格子里。
               if (!layout.isShort) grid,
-              _infoCard(context, chain, compact: layout.isShort),
             ],
           );
         })),
@@ -898,30 +892,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   double _railWidth(AppLayout layout) =>
       (layout.availableWidth * 0.27).clamp(280.0, 340.0);
 
-  /// 宽屏右栏里的今日信息卡。
-  ///
-  /// 用的是 `inSidePane: true` 那条路（卡片高度交给内容，见 `_infoCard`）。
-  ///
-  /// **卡片推到底**（用户 2026-10-13：「就算是一小块，也得放在右下角吧」）：
-  /// `ConstrainedBox(minHeight: 视口高)` 撑满这一栏，`Column(end)` 再把卡片压到底边。
-  /// 有富余时这一层什么都不做（列高 = 视口高，卡片贴底）；**没富余时**（车机上开着
-  /// 特大字号、六班组那种最满的卡片）列会长过视口，于是**这一栏自己滚** ——
-  /// 外层的 `SingleChildScrollView` 就是这个兜底，别把它写成
-  /// `NeverScrollableScrollPhysics`，那样会直接溢出成黄黑条纹。
-  ///
-  /// ⚠️ 这一栏**不是「面板套滚动」**（AGENTS.md 禁的是面板里再套一层滚动）：它是一个
-  /// 布局列，卡片本身在 `inSidePane` 那条路上仍然是「高度交给内容」的。
-  Widget _sideRail(BuildContext context, ScheduleChain? chain) => LayoutBuilder(
-        builder: (context, c) => SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: c.maxHeight),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [_infoCard(context, chain, inSidePane: true)],
-            ),
-          ),
-        ),
-      );
+  /// 宽屏右栏（v0.13：今日信息卡已删，信息合并到格子里）。
+  Widget _sideRail(BuildContext context, ScheduleChain? chain) => const SizedBox.shrink();
 
   /// 顶栏那一行装不装得下 —— **按排版实测**，不拿宽度阈值猜（理由见 `_header`）。
   ///
