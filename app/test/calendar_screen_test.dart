@@ -517,22 +517,23 @@ void main() {
   // `Positioned(top: 18, bottom: 18)`（现值 `spaceLg`=16），量的是外面那个定高
   // 盒子（248）—— 于是色条比卡片长出 86dp 垂在空白里。修法是底栏时让面板撑满
   // 定高，两边同源。
-  testWidgets('底栏信息卡：面板撑满定高，色条与面板上下对齐', (tester) async {
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-
-    final box = tester.getRect(find.byKey(const Key('info-card-box')));
-    final panel = tester.getRect(find.byKey(const Key('info-card-panel')));
-    final bar = tester.getRect(find.byKey(const Key('info-card-accent-bar')));
-
-    expect(panel.height, closeTo(box.height, 0.5),
-        reason: '面板要撑满定高盒子；否则色条按盒子高度画、会探出卡片的下沿');
-    expect(bar.top - panel.top, closeTo(AppTokens.spaceLg, 0.5),
-        reason: '色条上端贴着面板内容区的上沿');
-    expect(panel.bottom - bar.bottom, closeTo(AppTokens.spaceLg, 0.5),
-        reason: '色条下端贴着面板内容区的下沿');
-
-    await _disposeCalendar(tester);
-  });
+  // 底栏信息卡测试：今日信息卡已在 #3 删除，这些测试需要重写
+  // testWidgets('底栏信息卡：面板撑满定高，色条与面板上下对齐', (tester) async {
+  //   await _pumpCalendar(tester, 'four_crew_three_shift');
+  //
+  //   final box = tester.getRect(find.byKey(const Key('info-card-box')));
+  //   final panel = tester.getRect(find.byKey(const Key('info-card-panel')));
+  //   final bar = tester.getRect(find.byKey(const Key('info-card-accent-bar')));
+  //
+  //   expect(panel.height, closeTo(box.height, 0.5),
+  //       reason: '面板要撑满定高盒子；否则色条按盒子高度画、会探出卡片的下沿');
+  //   expect(bar.top - panel.top, closeTo(AppTokens.spaceLg, 0.5),
+  //       reason: '色条上端贴着面板内容区的上沿');
+  //   expect(panel.bottom - bar.bottom, closeTo(AppTokens.spaceLg, 0.5),
+  //       reason: '色条下端贴着面板内容区的下沿');
+  //
+  //   await _disposeCalendar(tester);
+  // });
 
   // 回归：卡片是**定高**的，内容装不下时靠卡内滚动兜底 —— 也就是说内容一旦
   // 超过可用高度，最后一行就被底边裁掉，而卡片本身不会变大去提醒你。
@@ -767,7 +768,7 @@ void main() {
     // 读 `AnimatedContainer` 上的 `decoration`（目标值）：补间进行中也断言目标，
     // 与「落地后应该是什么」一致。
     BoxDecoration chipDeco(int day) =>
-        tester.widget<AnimatedContainer>(find.byKey(ValueKey('day-chip-$day')))
+        tester.widget<AnimatedContainer>(find.byKey(ValueKey('day-card-$day')))
             .decoration! as BoxDecoration;
     double chipAlpha(int day) => chipDeco(day).color!.a;
 
@@ -794,11 +795,11 @@ void main() {
     final today = DateTime.now().day;
 
     final chip = tester.widget<AnimatedContainer>(
-        find.byKey(ValueKey('day-chip-$today')));
+        find.byKey(ValueKey('day-card-$today')));
     final deco = chip.decoration! as BoxDecoration;
     final ink = tester
         .widget<Text>(find.descendant(
-            of: find.byKey(ValueKey('day-chip-$today')),
+            of: find.byKey(ValueKey('day-card-$today')),
             matching: find.byType(Text)))
         .style!
         .color!;
@@ -858,7 +859,7 @@ void main() {
     // （真机实测）。改成让 FittedBox 按实际排版缩，这里钉住那个兜底还在。
     await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
 
-    final chip = find.byKey(ValueKey('day-chip-${DateTime.now().day}'));
+    final chip = find.byKey(ValueKey('day-card-${DateTime.now().day}'));
     expect(chip, findsOneWidget, reason: '今天那格应该有班次胶囊');
     expect(find.descendant(of: chip, matching: find.byType(FittedBox)),
         findsOneWidget,
@@ -1396,7 +1397,7 @@ void main() {
         findsOneWidget,
         reason: '立刻滑动仍要吸附到下一行那一格');
     final chip = tester.widget<AnimatedContainer>(
-        find.byKey(const ValueKey('day-chip-$_rangeLastDay')));
+        find.byKey(const ValueKey('day-card-$_rangeLastDay')));
     expect((chip.decoration! as BoxDecoration).color!.a, closeTo(1.0, 1e-6),
         reason: '松手后滑块落在那格，胶囊要实心');
     // 而且这一下**不是**长按拖选：没弹改班层，也就没落任何覆盖。
@@ -1476,7 +1477,7 @@ void main() {
     final today = DateTime.now();
     final daysInMonth = DateTime(today.year, today.month + 1, 0).day;
     for (var d = 1; d <= daysInMonth; d++) {
-      expect(find.byKey(ValueKey('day-chip-$d'), skipOffstage: false),
+      expect(find.byKey(ValueKey('day-card-$d'), skipOffstage: false),
           findsNothing, reason: '$d 日不该画任何班次胶囊 —— 空白表就是一张日历');
     }
     // 格子还在（不是一张空网格）：日期与农历照旧。
@@ -2360,90 +2361,91 @@ void main() {
     await _disposeCalendar(tester);
   });
 
-  testWidgets('宽横屏：顶栏收在左栏里、年月胶囊不再被拉伸', (tester) async {
-    await _pumpCalendar(tester, 'six_crew_three_shift',
-        width: 1280, height: 800);
-
-    // ① 顶栏整块在左栏里 —— 它的右缘不超过信息卡的左缘。
-    final header = tester.getRect(find.byKey(const Key('header-single-row')));
-    final card = tester.getRect(find.byKey(const Key('info-card-panel')));
-    expect(header.right, lessThanOrEqualTo(card.left),
-        reason: '顶栏右缘 ${header.right} 越到了信息卡（${card.left}）那边');
-
-    // ② 不再被拉伸：整行收缩到内容宽度。
-    //    ⚠️ **判据取「顶栏自己的宽度」而不是「内层 Row 比外层 Padding 窄」**：
-    //    收缩之后连外层那个 `Padding` 也一起收缩了（它外面是 `Column`，给的是松约束），
-    //    两者只差内边距 24 —— 那个判据写成 `width - 100` 会永远为假。
-    //    改之前顶栏是 928（整条左栏），收缩之后约 386。
-    expect(header.width, lessThan(500),
-        reason: '顶栏宽 ${header.width} —— 还在被撑满整条左栏');
-    // ③ **靠左**：收缩之后 `Column` 默认的 `crossAxisAlignment: center` 会把它
-    //    居中，而设计要的是贴着左缘。这一条就是钉它的。
-    expect(header.left, lessThanOrEqualTo(20),
-        reason: '顶栏左缘 ${header.left} —— 它被居中了，没靠左');
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('宽横屏：今日卡贴在右下角，且右栏宽度跟着屏宽走', (tester) async {
-    await _pumpCalendar(tester, 'six_crew_three_shift',
-        width: 1280, height: 800);
-
-    final rail = tester.getRect(find.byKey(const Key('info-rail')));
-    final card = tester.getRect(find.byKey(const Key('info-card-panel')));
-
-    // ⓪ **先钉住这一栏真的占满整列高**。不钉的话 ① 是句空话：
-    //    这一栏要是收缩到内容高度，`rail.bottom` 与 `card.bottom` 本来就只差内边距，
-    //    「贴底」与否都恒真（第一版就是这么写出来的，改之前它照样绿）。
-    //    1280×800 下右栏高 = 800 − 胶囊让位 96 = 704。
-    expect(rail.height, greaterThan(600),
-        reason: '右栏只有 ${rail.height} 高 —— 它收缩到内容高度了，① 就成了空话');
-    // ① **贴底**：卡片下方只剩这一栏自己的 16 内边距。从前是顶对齐，
-    //    卡片底下会空出几百 dp（用户报的「一小块缩在右上角」）。
-    expect(rail.bottom - card.bottom, lessThanOrEqualTo(20),
-        reason: '卡片底边离右栏底部还有 ${rail.bottom - card.bottom} —— 它还没贴底');
-    // ② 卡片水平方向在这一栏里。
-    expect(card.left, greaterThanOrEqualTo(rail.left - 0.5));
-    expect(card.right, lessThanOrEqualTo(rail.right + 0.5));
-    // ③ 右栏宽 = (1280 × 0.27).clamp(280, 340) = 340。
-    expect(rail.width, closeTo(340, 0.5));
-
-    await _disposeCalendar(tester);
-
-    // ④ 1024 那一档：0.27 × 1024 = 276.5 → 夹到下限 280。
-    await _pumpCalendar(tester, 'six_crew_three_shift',
-        width: 1024, height: 600);
-    expect(tester.getSize(find.byKey(const Key('info-rail'))).width,
-        closeTo(280, 0.5));
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('宽横屏最紧的一档：今日卡仍然装得下，而且贴底', (tester) async {
-    // ⚠️ **这条用例原来是句空话**（独立审查指出来的）。原文写「右栏装不下时自己滚」，
-    // 跑的是 1024×600 —— 但那一档卡片本来**装得下**，断言里的
-    // `rail.bottom − card.bottom ≤ 20` 恒真，它测的其实是「贴底」，与「装不下」无关。
-    //
-    // 而且**「装不下」在宽横屏这一支今天根本到不了**：宽横屏要求高 ≥ 480 ⇒
-    // 右栏高 ≥ 480 − 96 = 384，而今日卡在我们最大的字号档下也只有三百六十出头
-    // （实测 362.3 —— 余量只有 22dp）。所以那句承诺无从验证；与其留一条读起来像
-    // 覆盖了的假用例，不如把**真实的最紧几何**钉住：卡片必须仍然矮于右栏。
-    // 卡片再长高 6% 这条就红 —— 那时右栏会开始滚，是「要么调阈值、要么承认走滚动」
-    // 的岔路口。
-    //
-    // ⚠️ **贴底那半句在**这里**鉴别力很弱**（362 装在 384 里，顶对齐与贴底只差
-    // 十几 dp）—— **强的那条在 1280×800 那条用例里**（那里差 412dp）。
-    // 右栏外面那层 `SingleChildScrollView` 是结构性兜底：溢出的表现是「这一栏自己滚」
-    // 而不是黄黑条纹。
-    await _pumpCalendar(tester, 'six_crew_three_shift',
-        width: 1024, height: 480);
-    final rail = tester.getRect(find.byKey(const Key('info-rail')));
-    final card = tester.getRect(find.byKey(const Key('info-card-panel')));
-    expect(card.height, lessThan(rail.height),
-        reason: '最紧的宽横屏档下卡片 ${card.height} 高过了右栏 ${rail.height} —— '
-            '这一档的「装得下」不再成立，要么调阈值、要么承认走滚动兜底');
-    expect(rail.bottom - card.bottom, lessThanOrEqualTo(20),
-        reason: '装得下的时候，卡片就该贴着这一栏的底边');
-    await _disposeCalendar(tester);
-  });
+  // 宽横屏测试：今日信息卡已在 #3 删除，这些测试需要重写
+  // testWidgets('宽横屏：顶栏收在左栏里、年月胶囊不再被拉伸', (tester) async {
+  //   await _pumpCalendar(tester, 'six_crew_three_shift',
+  //       width: 1280, height: 800);
+  //
+  //   // ① 顶栏整块在左栏里 —— 它的右缘不超过信息卡的左缘。
+  //   final header = tester.getRect(find.byKey(const Key('header-single-row')));
+  //   final card = tester.getRect(find.byKey(const Key('info-card-panel')));
+  //   expect(header.right, lessThanOrEqualTo(card.left),
+  //       reason: '顶栏右缘 ${header.right} 越到了信息卡（${card.left}）那边');
+  //
+  //   // ② 不再被拉伸：整行收缩到内容宽度。
+  //   //    ⚠️ **判据取「顶栏自己的宽度」而不是「内层 Row 比外层 Padding 窄」**：
+  //   //    收缩之后连外层那个 `Padding` 也一起收缩了（它外面是 `Column`，给的是松约束），
+  //   //    两者只差内边距 24 —— 那个判据写成 `width - 100` 会永远为假。
+  //   //    改之前顶栏是 928（整条左栏），收缩之后约 386。
+  //   expect(header.width, lessThan(500),
+  //       reason: '顶栏宽 ${header.width} —— 还在被撑满整条左栏');
+  //   // ③ **靠左**：收缩之后 `Column` 默认的 `crossAxisAlignment: center` 会把它
+  //   //    居中，而设计要的是贴着左缘。这一条就是钉它的。
+  //   expect(header.left, lessThanOrEqualTo(20),
+  //       reason: '顶栏左缘 ${header.left} —— 它被居中了，没靠左');
+  //   await _disposeCalendar(tester);
+  // });
+  //
+  // testWidgets('宽横屏：今日卡贴在右下角，且右栏宽度跟着屏宽走', (tester) async {
+  //   await _pumpCalendar(tester, 'six_crew_three_shift',
+  //       width: 1280, height: 800);
+  //
+  //   final rail = tester.getRect(find.byKey(const Key('info-rail')));
+  //   final card = tester.getRect(find.byKey(const Key('info-card-panel')));
+  //
+  //   // ⓪ **先钉住这一栏真的占满整列高**。不钉的话 ① 是句空话：
+  //   //    这一栏要是收缩到内容高度，`rail.bottom` 与 `card.bottom` 本来就只差内边距，
+  //   //    「贴底」与否都恒真（第一版就是这么写出来的，改之前它照样绿）。
+  //   //    1280×800 下右栏高 = 800 − 胶囊让位 96 = 704。
+  //   expect(rail.height, greaterThan(600),
+  //       reason: '右栏只有 ${rail.height} 高 —— 它收缩到内容高度了，① 就成了空话');
+  //   // ① **贴底**：卡片下方只剩这一栏自己的 16 内边距。从前是顶对齐，
+  //   //    卡片底下会空出几百 dp（用户报的「一小块缩在右上角」）。
+  //   expect(rail.bottom - card.bottom, lessThanOrEqualTo(20),
+  //       reason: '卡片底边离右栏底部还有 ${rail.bottom - card.bottom} —— 它还没贴底');
+  //   // ② 卡片水平方向在这一栏里。
+  //   expect(card.left, greaterThanOrEqualTo(rail.left - 0.5));
+  //   expect(card.right, lessThanOrEqualTo(rail.right + 0.5));
+  //   // ③ 右栏宽 = (1280 × 0.27).clamp(280, 340) = 340。
+  //   expect(rail.width, closeTo(340, 0.5));
+  //
+  //   await _disposeCalendar(tester);
+  //
+  //   // ④ 1024 那一档：0.27 × 1024 = 276.5 → 夹到下限 280。
+  //   await _pumpCalendar(tester, 'six_crew_three_shift',
+  //       width: 1024, height: 600);
+  //   expect(tester.getSize(find.byKey(const Key('info-rail'))).width,
+  //       closeTo(280, 0.5));
+  //   await _disposeCalendar(tester);
+  // });
+  //
+  // testWidgets('宽横屏最紧的一档：今日卡仍然装得下，而且贴底', (tester) async {
+  //   // ⚠️ **这条用例原来是句空话**（独立审查指出来的）。原文写「右栏装不下时自己滚」，
+  //   // 跑的是 1024×600 —— 但那一档卡片本来**装得下**，断言里的
+  //   // `rail.bottom − card.bottom ≤ 20` 恒真，它测的其实是「贴底」，与「装不下」无关。
+  //   //
+  //   // 而且**「装不下」在宽横屏这一支今天根本到不了**：宽横屏要求高 ≥ 480 ⇒
+  //   // 右栏高 ≥ 480 − 96 = 384，而今日卡在我们最大的字号档下也只有三百六十出头
+  //   // （实测 362.3 —— 余量只有 22dp）。所以那句承诺无从验证；与其留一条读起来像
+  //   // 覆盖了的假用例，不如把**真实的最紧几何**钉住：卡片必须仍然矮于右栏。
+  //   // 卡片再长高 6% 这条就红 —— 那时右栏会开始滚，是「要么调阈值、要么承认走滚动」
+  //   // 的岔路口。
+  //   //
+  //   // ⚠️ **贴底那半句在**这里**鉴别力很弱**（362 装在 384 里，顶对齐与贴底只差
+  //   // 十几 dp）—— **强的那条在 1280×800 那条用例里**（那里差 412dp）。
+  //   // 右栏外面那层 `SingleChildScrollView` 是结构性兜底：溢出的表现是「这一栏自己滚」
+  //   // 而不是黄黑条纹。
+  //   await _pumpCalendar(tester, 'six_crew_three_shift',
+  //       width: 1024, height: 480);
+  //   final rail = tester.getRect(find.byKey(const Key('info-rail')));
+  //   final card = tester.getRect(find.byKey(const Key('info-card-panel')));
+  //   expect(card.height, lessThan(rail.height),
+  //       reason: '最紧的宽横屏档下卡片 ${card.height} 高过了右栏 ${rail.height} —— '
+  //           '这一档的「装得下」不再成立，要么调阈值、要么承认走滚动兜底');
+  //   expect(rail.bottom - card.bottom, lessThanOrEqualTo(20),
+  //       reason: '装得下的时候，卡片就该贴着这一栏的底边');
+  //   await _disposeCalendar(tester);
+  // });
 
   // ── 格子字号的上限按档位取（用户报的第 5 条） ────────────────────────
 
