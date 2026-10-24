@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/l10n.dart';
 import '../../data/app_repository.dart';
+import '../../state/nav_settings.dart';
 import '../../domain/recurring_todo.dart';
 import '../../domain/shift_rotation.dart';
 import '../widget/widget_service.dart';
@@ -942,6 +943,8 @@ class AlarmService {
   /// 与其让每个调用点抄一遍，不如在这里读齐。漏传一个参数不会报错，只会让
   /// 那类提醒静默不生效，所以这个「读齐」的动作只该有一份。
   static Future<void> rescheduleAll(AppRepository repo) async {
+    final navConfig = await _readNavConfig();
+    if (!navConfig.isAlarmEnabled) return;
     // 读的是**整条链**：未来 60 天里可能跨时段边界，边界之后那几天的班属于别的
     // 方案 —— 只按当前方案排会排到错的班表上，直到冷启动才自愈。
     final schedules = await repo.getActiveSchedules();
@@ -952,9 +955,20 @@ class AlarmService {
       overrides: await repo.listShiftAlarmOverrides(),
       events: await repo.listEvents(),
     );
+    if (!navConfig.isTodoEnabled) return;
     // 重复待办的提醒走独立号段，与上面那条链路互不影响（`reschedule` 里的
     // 待办那一段会跳过带 `seriesId` 的行）。
     await rescheduleRecurringReminders(await repo.listRecurringTodos());
+  }
+
+  static Future<NavTabConfig> _readNavConfig() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString('navConfig');
+      return raw != null ? NavTabConfig.fromJson(raw) : const NavTabConfig();
+    } catch (_) {
+      return const NavTabConfig();
+    }
   }
 
   /// 清除并按 [source] + [customAlarms] + [events] + [overrides] 重排所有闹钟。

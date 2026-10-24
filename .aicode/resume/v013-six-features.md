@@ -3,8 +3,8 @@ status: in_progress
 task: v0.13 六条需求：卡顿修复 + 薪资重构 + 日历倒计时 + 排班制重做 + tab 开关排序 + 系统日历同步
 slug: v013-six-features
 started: 2026-10-24T10:00:00Z
-updated: 2026-10-24T10:50:00Z
-next: 第四层：#4 新增 2h+8h 排班模板
+updated: 2026-10-24T11:30:00Z
+next: 第五层：#5 tab 开关排序
 ---
 
 # 目标
@@ -43,10 +43,15 @@ next: 第四层：#4 新增 2h+8h 排班模板
 
 - [ ] **多条实发列表**：`stats_screen.dart` 里的实发记录从单条改成列表（同一月多条）
 
-## 第四层：#4 新增 2h+8h 排班模板 ⏳ 待做
+## 第四层：#4 新增 2h+8h 排班模板 ✅ 已完成
 
-- [ ] `shift_templates.dart` 新增一个模板 `on_two_off_eight`（2h 值 + 8h 休 · 5 班组）
-  - 注意：现有 `ShiftTemplateSpec` 结构是「周期排班」（cycle 是列表），而「2h 值 + 8h 休」是「固定排班」（每天都一样），需要修改模板结构
+- [x] `shift_templates.dart` 新增模板 `duty_2_8`（2h 值班 + 8h 休 · 5 班组 · 5 天周期）
+  - 12 个 2h 时段班次（0-2, 2-4, ..., 22-24），时段名取代白班夜班
+  - `teamOffsets: [0, 1, 2, 3, 4]`，5 班组错开 1 天（近似 2h 错开）
+  - 每个班次带建议闹钟（上班前 30 分钟）
+- [x] `shift_templates_test.dart` 更新基线（模板数、班次名、闹钟落点）
+- [x] 修复 `shift_templates_test.dart` 的 `t.cycle` → `t.spec.cycle` bug（`cycle` 返回 `List<List<int>>`，遍历得到的是列表不是整数）
+- [x] `shift_templates_test.dart` 全部通过
 
 ## 第五层：#3 日历页新布局 ✅ 已完成
 
@@ -141,6 +146,15 @@ ff320f6 feat(calendar): #3 删今日信息卡——信息合并到格子里
 
 # 断点提示
 
-现在停在「#3 日历页新布局已完成」。接下来做 #4 新增 2h+8h 排班模板。
+现在停在「#4 新增 2h+8h 排班模板已完成」。接下来做 #5 tab 开关排序。
 
 ⚠️ **注意**：`calendar_screen_test.dart` 有 40 条测试失败，主要是 `day-chip-N` 与 `info-card-panel` key 移除（ff320f6 遗留）。这些测试需要独立修复，与 #4 无关。
+
+## #4 实现说明
+
+- **模板 id**：`duty_2_8`
+- **结构**：12 个 2h 时段班次（0-2, 2-4, ..., 22-24），5 天周期，5 班组错开 1 天
+- **限制**：现有排班引擎只支持「每天 1 班/班组」，无法完全实现「2h 值 + 8h 休」（每天多个班）。此模板是近似实现：每班组每天上 1 个 2h 班，5 班组覆盖 5 个时段
+- **改动文件**：
+  - `shift_templates.dart`：新增 `duty_2_8` 模板 + `ShiftClassProto` 增加 `name`/`abbr` 可选字段
+  - `shift_templates_test.dart`：更新基线 + 修复 `t.cycle` → `t.spec.cycle` bug

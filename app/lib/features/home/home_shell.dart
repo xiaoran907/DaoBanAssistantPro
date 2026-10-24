@@ -13,6 +13,7 @@ import '../../core/update_checker.dart';
 import '../../data/app_repository.dart';
 import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
+import '../../state/nav_settings.dart';
 import '../alarm/alarm_ringing_screen.dart';
 import '../alarm/alarm_screen.dart';
 import '../alarm/alarm_service.dart';
@@ -44,21 +45,29 @@ class _HomeShellState extends ConsumerState<HomeShell>
   /// 那会把他自己打开的页面一起弹掉。
   bool _ringingUp = false;
 
-  static List<(IconData, String)> get _items => [
-        (Icons.calendar_month_outlined, L10n.navCalendar),
-        (Icons.alarm_outlined, L10n.navAlarm),
-        (Icons.event_note_outlined, L10n.navTodo),
-        (Icons.account_balance_wallet_outlined, L10n.navSalary),
-        (Icons.person_outlined, L10n.navProfile),
-      ];
-
-  static const _screens = [
-    CalendarScreen(),
-    AlarmScreen(),
-    ScheduleScreen(),
-    StatsScreen(),
-    ProfileScreen(),
+  static final List<_TabSpec> _allTabs = [
+    _TabSpec(NavTabId.calendar, Icons.calendar_month_outlined,
+        L10n.navCalendar, const CalendarScreen()),
+    _TabSpec(NavTabId.alarm, Icons.alarm_outlined,
+        L10n.navAlarm, const AlarmScreen()),
+    _TabSpec(NavTabId.todo, Icons.event_note_outlined,
+        L10n.navTodo, const ScheduleScreen()),
+    _TabSpec(NavTabId.salary, Icons.account_balance_wallet_outlined,
+        L10n.navSalary, const StatsScreen()),
+    _TabSpec(NavTabId.profile, Icons.person_outlined,
+        L10n.navProfile, const ProfileScreen()),
   ];
+
+  List<_TabSpec> _activeTabs(NavTabConfig config) {
+    final ids = config.activeTabs;
+    final map = {for (final t in _allTabs) t.id: t};
+    return ids.map((id) => map[id]!).whereType<_TabSpec>().toList();
+  }
+
+  int _indexForTab(NavTabConfig config, NavTabId id) {
+    final idx = config.activeTabs.indexOf(id);
+    return idx < 0 ? 0 : idx;
+  }
 
   /// 快照推送的去抖句柄（见 [_scheduleWidgetPush]）。
   Timer? _pushDebounce;
@@ -210,21 +219,18 @@ class _HomeShellState extends ConsumerState<HomeShell>
     _openTodoPage();
   }
 
-  /// 切到「待办」页。下标 2 与 `_items` / `_screens` 的顺序绑定
-  /// （0 日历、1 闹钟、2 待办、3 我的），改那一组时这里要跟着改。
   void _openTodoPage() {
     AlarmService.openTodoRequested.value = false;
     if (!mounted || !_controller.hasClients) return;
-    _controller.jumpToPage(2);
+    _controller.jumpToPage(
+        _indexForTab(ref.read(navSettingsProvider), NavTabId.todo));
   }
 
-  /// 用户在桌面小组件上点了某一天：切到日历页，再让 CalendarScreen 跳到那天。
-  ///
-  /// **不在这里把 notifier 置回 null** —— CalendarScreen 还要读它。由那边收尾。
   void _onWidgetDayRequested() {
     if (WidgetService.widgetLaunchRequested.value == null) return;
     if (!mounted || !_controller.hasClients) return;
-    _controller.jumpToPage(0); // 0 = 日历，与 _items/_screens 的顺序绑定
+    _controller.jumpToPage(
+        _indexForTab(ref.read(navSettingsProvider), NavTabId.calendar));
   }
 
   /// 把当前排班与外观算成快照推给原生。
@@ -318,26 +324,40 @@ class _HomeShellState extends ConsumerState<HomeShell>
     // 「待办先到、另两个后到，于是重排跑了但没排待办」——不报错，只是提醒不发。
     ref.listen(eventsProvider, (_, __) => _tryStartupReschedule());
     ref.watch(appSettingsProvider.select((s) => s.language)); // 语言切换时重建导航标签（只订阅语言）
+    final navConfig = ref.watch(navSettingsProvider);
+    final tabs = _activeTabs(navConfig);
+    ref.listen(navSettingsProvider, (old, next) {
+      if (!mounted || !_controller.hasClients) return;
+      final page = _controller.page;
+      if (page == null) return;
+      final maxPage = next.activeTabs.length - 1;
+      if (page > maxPage) _controller.jumpToPage(maxPage.clamp(0, 1));
+    });
     return Scaffold(
       extendBody: true,
-      // 去掉底部安全区：让页面内容无遮挡地铺满到底、从悬浮胶囊下方穿过，
-      // 避免胶囊四周露出不透明的空背景（像一层「蒙版」）。
       body: MediaQuery.removePadding(
         context: context,
         removeBottom: true,
         child: PageView(
           controller: _controller,
-          physics: const NeverScrollableScrollPhysics(), // 关闭内容区左右滑动
-          children: _screens,
+          physics: const NeverScrollableScrollPhysics(),
+          children: tabs.map((t) => t.screen).toList(),
         ),
       ),
       bottomNavigationBar: GlassNavBar(
-        // 给工装用：按图标找 tab 时得能把它和页面里的同名图标区分开 —— 信息卡上
-        // 那个「N 项待办」徽章用的就是 `event_note_outlined`，与「待办」tab 同款。
-        key: const Key('glass-nav-bar'),
+        key: ValueKey('glass-nav-bar-${navConfig.activeTabs.join(',')}'),
         controller: _controller,
-        items: _items,
+        items: tabs.map((t) => (t.icon, t.title)).toList(),
       ),
     );
   }
+}
+
+/// 一个 tab 的完整定义。
+class _TabSpec {
+  const _TabSpec(this.id, this.icon, this.title, this.screen);
+  final NavTabId id;
+  final IconData icon;
+  final String title;
+  final Widget screen;
 }

@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../state/nav_settings.dart';
 
 import '../domain/monthly_pattern.dart';
 import '../domain/payroll.dart';
@@ -1259,6 +1262,11 @@ class AppRepository {
   /// `schedule_screen.dart`）。列表是 drift 流，**不写库就不会重发**，所以
   /// 「一直没关过的 App 跨过午夜」那条路径必须靠「回到前台」这一下。
   Future<void> advanceRecurringTodos({required DateTime today}) async {
+    // 待办 tab 关掉时不生成新的重复待办。
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString('navConfig');
+    final navConfig = raw != null ? NavTabConfig.fromJson(raw) : const NavTabConfig();
+    if (!navConfig.isTodoEnabled) return;
     await db.transaction(() async {
       final series = await listRecurringTodos();
       final rows = await listEvents();

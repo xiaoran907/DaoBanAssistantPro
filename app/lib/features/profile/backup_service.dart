@@ -14,6 +14,7 @@ import '../../data/backup.dart';
 import '../../data/app_repository.dart';
 import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
+import '../../state/nav_settings.dart';
 import '../alarm/alarm_service.dart';
 
 /// 导入导出的编排：文件选择走 SAF（原生通道），编码 / 校验 / 恢复走
@@ -107,6 +108,7 @@ class BackupService {
       await restoreBackupPrefs(sp, parsed.prefs);
       // 外观那一组在内存里的值要跟着 prefs 走一遍（主题 / 主色 / 语言 / 档位）。
       await ref.read(appSettingsProvider.notifier).reload();
+      await ref.read(navSettingsProvider.notifier).reload();
       // 重复待办「当前这一次」的生成与归档裁剪：备份里可能带着系列定义，
       // 让列表立刻长出该有的那几条，而不是等下次启动。
       await repo.advanceRecurringTodos(today: dateOnly(DateTime.now()));

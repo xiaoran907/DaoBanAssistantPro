@@ -24,6 +24,7 @@ import '../../core/widgets/section_heading.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/app_repository.dart';
 import '../../state/app_settings.dart';
+import '../../state/nav_settings.dart';
 import '../alarm/alarm_service.dart';
 import '../calendar/schedule_management_screen.dart';
 import 'app_dialogs.dart';
@@ -251,6 +252,9 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
+            SectionHeading(L10n.sectionNav),
+            const _NavSettingsCard(),
+            const SizedBox(height: 16),
             SectionHeading(L10n.sectionSchedule),
             GlassTile(
               translucentFill: false,
@@ -443,6 +447,7 @@ class ProfileScreen extends ConsumerWidget {
       final sp = await SharedPreferences.getInstance();
       await sp.clear();
       ref.read(appSettingsProvider.notifier).resetToDefaults();
+      ref.read(navSettingsProvider.notifier).resetToDefaults();
       // **放在清 prefs 之后**：这一步会把上面几样一起算进推给桌面的快照里。
       await AlarmService.rescheduleAll(repo);
       if (context.mounted) {
@@ -1126,6 +1131,110 @@ class _PermissionCheckState extends ConsumerState<_PermissionCheck>
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// 导航栏设置卡片：开关 tab + 拖拽排序。
+class _NavSettingsCard extends ConsumerWidget {
+  const _NavSettingsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final navConfig = ref.watch(navSettingsProvider);
+
+    return GlassTile(
+      translucentFill: false,
+      padding: EdgeInsets.zero,
+      child: ReorderableListView(
+        key: const Key('nav-reorder-list'),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        onReorderItem: (oldIndex, newIndex) {
+          final order = navConfig.order;
+          if (oldIndex < 0 || oldIndex >= order.length) return;
+          final id = order[oldIndex];
+          ref.read(navSettingsProvider.notifier).reorder(
+                id: id, newIndex: newIndex);
+        },
+        children: [
+          for (final id in navConfig.order) _NavTabRow(
+            key: ValueKey(id),
+            id: id,
+            enabled: navConfig.isEnabled(id),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const _allTabDefs = [
+    (NavTabId.calendar, Icons.calendar_month_outlined),
+    (NavTabId.alarm, Icons.alarm_outlined),
+    (NavTabId.todo, Icons.event_note_outlined),
+    (NavTabId.salary, Icons.account_balance_wallet_outlined),
+    (NavTabId.profile, Icons.person_outlined),
+  ];
+}
+
+/// 单个 tab 行：图标 + 名称 + 开关。
+class _NavTabRow extends ConsumerWidget {
+  const _NavTabRow({super.key, required this.id, required this.enabled});
+
+  final NavTabId id;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final def = _NavSettingsCard._allTabDefs
+        .firstWhere((d) => d.$1 == id);
+    final title = switch (id) {
+      NavTabId.calendar => L10n.navCalendar,
+      NavTabId.alarm => L10n.navAlarm,
+      NavTabId.todo => L10n.navTodo,
+      NavTabId.salary => L10n.navSalary,
+      NavTabId.profile => L10n.navProfile,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Icon(def.$2, size: AppTokens.iconMd),
+          const SizedBox(width: 12),
+          Expanded(child: Text(title, style: AppTokens.labelStrong)),
+          GlassSwitch(
+            value: enabled,
+            onChanged: (v) async {
+              if (!v) {
+                final confirmed = await showGlassDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => GlassDialog(
+                    title: L10n.navConfirmOffTitle,
+                    content: Text(L10n.navConfirmOffContent(title)),
+                    actions: [
+                      GlassActionButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        label: L10n.cancel,
+                      ),
+                      const SizedBox(width: 8),
+                      GlassActionButton(
+                        variant: GlassActionVariant.danger,
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        label: L10n.confirmResetAction,
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+              }
+              ref
+                  .read(navSettingsProvider.notifier)
+                  .setEnabled(id, v);
+            },
+          ),
+        ],
+      ),
     );
   }
 }

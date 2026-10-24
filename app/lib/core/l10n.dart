@@ -71,6 +71,15 @@ class L10n {
   static String get sectionData => t('数据', 'Data');
   static String get sectionPermission => t('权限', 'Permissions');
   static String get sectionAbout => t('关于', 'About');
+  static String get sectionNav => t('导航栏', 'Navigation');
+  static String get navToggleTitle => t('导航栏页面', 'Navigation tabs');
+  static String get navToggleSubtitle => t('开关与排序底栏页面', 'Toggle and reorder bottom tabs');
+  static String get navToggleHint => t('关掉后隐藏该页面，历史数据保留', 'Hidden; history kept');
+  static String get navConfirmOffTitle => t('关闭页面', 'Disable tab');
+  static String navConfirmOffContent(String name) =>
+      t('关掉「$name」后不再显示该页面，历史数据保留。确定？',
+          'Disable "$name"? History will be kept.');
+  static String get navReorderHint => t('拖拽排序', 'Drag to reorder');
 
   // 按天改班（换班 / 请假覆盖）
   static String get adjustShift => t('调整班次', 'Adjust shift');

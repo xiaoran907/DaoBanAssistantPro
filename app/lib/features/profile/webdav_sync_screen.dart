@@ -19,6 +19,7 @@ import '../../core/widgets/glass_snackbar.dart';
 import '../../core/widgets/glass_switch.dart';
 import '../../data/app_repository.dart';
 import '../../state/app_settings.dart';
+import '../../state/nav_settings.dart';
 import '../alarm/alarm_service.dart';
 import 'webdav_sync.dart';
 
@@ -122,6 +123,7 @@ class _WebDavSyncScreenState extends ConsumerState<WebDavSyncScreen> {
   /// → 重排闹钟）。
   Future<void> _afterRestore() async {
     await ref.read(appSettingsProvider.notifier).reload();
+    await ref.read(navSettingsProvider.notifier).reload();
     final repo = ref.read(appRepositoryProvider);
     final now = DateTime.now();
     await repo.advanceRecurringTodos(
