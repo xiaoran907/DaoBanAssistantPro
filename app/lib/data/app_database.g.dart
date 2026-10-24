@@ -5388,27 +5388,26 @@ class $CalendarEventMappingRowsTable extends CalendarEventMappingRows
   late final GeneratedColumn<int> day = GeneratedColumn<int>(
       'day', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _segMeta = const VerificationMeta('seg');
+  @override
+  late final GeneratedColumn<int> seg = GeneratedColumn<int>(
+      'seg', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
   static const VerificationMeta _externalEventIdMeta =
       const VerificationMeta('externalEventId');
   @override
   late final GeneratedColumn<String> externalEventId = GeneratedColumn<String>(
       'external_event_id', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _startDateMeta =
-      const VerificationMeta('startDate');
+  static const VerificationMeta _fingerprintMeta =
+      const VerificationMeta('fingerprint');
   @override
-  late final GeneratedColumn<DateTime> startDate = GeneratedColumn<DateTime>(
-      'start_date', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _endDateMeta =
-      const VerificationMeta('endDate');
-  @override
-  late final GeneratedColumn<DateTime> endDate = GeneratedColumn<DateTime>(
-      'end_date', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+      'fingerprint', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [scheduleId, classId, day, externalEventId, startDate, endDate];
+      [scheduleId, classId, day, seg, externalEventId, fingerprint];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -5440,6 +5439,12 @@ class $CalendarEventMappingRowsTable extends CalendarEventMappingRows
     } else if (isInserting) {
       context.missing(_dayMeta);
     }
+    if (data.containsKey('seg')) {
+      context.handle(
+          _segMeta, seg.isAcceptableOrUnknown(data['seg']!, _segMeta));
+    } else if (isInserting) {
+      context.missing(_segMeta);
+    }
     if (data.containsKey('external_event_id')) {
       context.handle(
           _externalEventIdMeta,
@@ -5448,23 +5453,19 @@ class $CalendarEventMappingRowsTable extends CalendarEventMappingRows
     } else if (isInserting) {
       context.missing(_externalEventIdMeta);
     }
-    if (data.containsKey('start_date')) {
-      context.handle(_startDateMeta,
-          startDate.isAcceptableOrUnknown(data['start_date']!, _startDateMeta));
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+          _fingerprintMeta,
+          fingerprint.isAcceptableOrUnknown(
+              data['fingerprint']!, _fingerprintMeta));
     } else if (isInserting) {
-      context.missing(_startDateMeta);
-    }
-    if (data.containsKey('end_date')) {
-      context.handle(_endDateMeta,
-          endDate.isAcceptableOrUnknown(data['end_date']!, _endDateMeta));
-    } else if (isInserting) {
-      context.missing(_endDateMeta);
+      context.missing(_fingerprintMeta);
     }
     return context;
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {scheduleId, classId, day};
+  Set<GeneratedColumn> get $primaryKey => {scheduleId, classId, day, seg};
   @override
   CalendarEventMappingRow map(Map<String, dynamic> data,
       {String? tablePrefix}) {
@@ -5476,12 +5477,12 @@ class $CalendarEventMappingRowsTable extends CalendarEventMappingRows
           .read(DriftSqlType.int, data['${effectivePrefix}class_id'])!,
       day: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}day'])!,
+      seg: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}seg'])!,
       externalEventId: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}external_event_id'])!,
-      startDate: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}start_date'])!,
-      endDate: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}end_date'])!,
+      fingerprint: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}fingerprint'])!,
     );
   }
 
@@ -5502,30 +5503,30 @@ class CalendarEventMappingRow extends DataClass
   /// 纯日期自 epoch 的天数（`dayNumber()`）。
   final int day;
 
+  /// 时段序号（主时段 0、额外时段 1..n，见 `ShiftClass.allSegments`）。
+  final int seg;
+
   /// 系统日历返回的 eventId（用于 update/delete）。
   final String externalEventId;
 
-  /// 事件开始时间。
-  final DateTime startDate;
-
-  /// 事件结束时间。
-  final DateTime endDate;
+  /// 内容指纹：`key|title|startMs|endMs|desc`。与上次同步不一致 → updateEvent。
+  final String fingerprint;
   const CalendarEventMappingRow(
       {required this.scheduleId,
       required this.classId,
       required this.day,
+      required this.seg,
       required this.externalEventId,
-      required this.startDate,
-      required this.endDate});
+      required this.fingerprint});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['schedule_id'] = Variable<int>(scheduleId);
     map['class_id'] = Variable<int>(classId);
     map['day'] = Variable<int>(day);
+    map['seg'] = Variable<int>(seg);
     map['external_event_id'] = Variable<String>(externalEventId);
-    map['start_date'] = Variable<DateTime>(startDate);
-    map['end_date'] = Variable<DateTime>(endDate);
+    map['fingerprint'] = Variable<String>(fingerprint);
     return map;
   }
 
@@ -5534,9 +5535,9 @@ class CalendarEventMappingRow extends DataClass
       scheduleId: Value(scheduleId),
       classId: Value(classId),
       day: Value(day),
+      seg: Value(seg),
       externalEventId: Value(externalEventId),
-      startDate: Value(startDate),
-      endDate: Value(endDate),
+      fingerprint: Value(fingerprint),
     );
   }
 
@@ -5547,9 +5548,9 @@ class CalendarEventMappingRow extends DataClass
       scheduleId: serializer.fromJson<int>(json['scheduleId']),
       classId: serializer.fromJson<int>(json['classId']),
       day: serializer.fromJson<int>(json['day']),
+      seg: serializer.fromJson<int>(json['seg']),
       externalEventId: serializer.fromJson<String>(json['externalEventId']),
-      startDate: serializer.fromJson<DateTime>(json['startDate']),
-      endDate: serializer.fromJson<DateTime>(json['endDate']),
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
     );
   }
   @override
@@ -5559,9 +5560,9 @@ class CalendarEventMappingRow extends DataClass
       'scheduleId': serializer.toJson<int>(scheduleId),
       'classId': serializer.toJson<int>(classId),
       'day': serializer.toJson<int>(day),
+      'seg': serializer.toJson<int>(seg),
       'externalEventId': serializer.toJson<String>(externalEventId),
-      'startDate': serializer.toJson<DateTime>(startDate),
-      'endDate': serializer.toJson<DateTime>(endDate),
+      'fingerprint': serializer.toJson<String>(fingerprint),
     };
   }
 
@@ -5569,16 +5570,16 @@ class CalendarEventMappingRow extends DataClass
           {int? scheduleId,
           int? classId,
           int? day,
+          int? seg,
           String? externalEventId,
-          DateTime? startDate,
-          DateTime? endDate}) =>
+          String? fingerprint}) =>
       CalendarEventMappingRow(
         scheduleId: scheduleId ?? this.scheduleId,
         classId: classId ?? this.classId,
         day: day ?? this.day,
+        seg: seg ?? this.seg,
         externalEventId: externalEventId ?? this.externalEventId,
-        startDate: startDate ?? this.startDate,
-        endDate: endDate ?? this.endDate,
+        fingerprint: fingerprint ?? this.fingerprint,
       );
   CalendarEventMappingRow copyWithCompanion(
       CalendarEventMappingRowsCompanion data) {
@@ -5587,11 +5588,12 @@ class CalendarEventMappingRow extends DataClass
           data.scheduleId.present ? data.scheduleId.value : this.scheduleId,
       classId: data.classId.present ? data.classId.value : this.classId,
       day: data.day.present ? data.day.value : this.day,
+      seg: data.seg.present ? data.seg.value : this.seg,
       externalEventId: data.externalEventId.present
           ? data.externalEventId.value
           : this.externalEventId,
-      startDate: data.startDate.present ? data.startDate.value : this.startDate,
-      endDate: data.endDate.present ? data.endDate.value : this.endDate,
+      fingerprint:
+          data.fingerprint.present ? data.fingerprint.value : this.fingerprint,
     );
   }
 
@@ -5601,16 +5603,16 @@ class CalendarEventMappingRow extends DataClass
           ..write('scheduleId: $scheduleId, ')
           ..write('classId: $classId, ')
           ..write('day: $day, ')
+          ..write('seg: $seg, ')
           ..write('externalEventId: $externalEventId, ')
-          ..write('startDate: $startDate, ')
-          ..write('endDate: $endDate')
+          ..write('fingerprint: $fingerprint')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      scheduleId, classId, day, externalEventId, startDate, endDate);
+  int get hashCode =>
+      Object.hash(scheduleId, classId, day, seg, externalEventId, fingerprint);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5618,9 +5620,9 @@ class CalendarEventMappingRow extends DataClass
           other.scheduleId == this.scheduleId &&
           other.classId == this.classId &&
           other.day == this.day &&
+          other.seg == this.seg &&
           other.externalEventId == this.externalEventId &&
-          other.startDate == this.startDate &&
-          other.endDate == this.endDate);
+          other.fingerprint == this.fingerprint);
 }
 
 class CalendarEventMappingRowsCompanion
@@ -5628,49 +5630,49 @@ class CalendarEventMappingRowsCompanion
   final Value<int> scheduleId;
   final Value<int> classId;
   final Value<int> day;
+  final Value<int> seg;
   final Value<String> externalEventId;
-  final Value<DateTime> startDate;
-  final Value<DateTime> endDate;
+  final Value<String> fingerprint;
   final Value<int> rowid;
   const CalendarEventMappingRowsCompanion({
     this.scheduleId = const Value.absent(),
     this.classId = const Value.absent(),
     this.day = const Value.absent(),
+    this.seg = const Value.absent(),
     this.externalEventId = const Value.absent(),
-    this.startDate = const Value.absent(),
-    this.endDate = const Value.absent(),
+    this.fingerprint = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CalendarEventMappingRowsCompanion.insert({
     required int scheduleId,
     required int classId,
     required int day,
+    required int seg,
     required String externalEventId,
-    required DateTime startDate,
-    required DateTime endDate,
+    required String fingerprint,
     this.rowid = const Value.absent(),
   })  : scheduleId = Value(scheduleId),
         classId = Value(classId),
         day = Value(day),
+        seg = Value(seg),
         externalEventId = Value(externalEventId),
-        startDate = Value(startDate),
-        endDate = Value(endDate);
+        fingerprint = Value(fingerprint);
   static Insertable<CalendarEventMappingRow> custom({
     Expression<int>? scheduleId,
     Expression<int>? classId,
     Expression<int>? day,
+    Expression<int>? seg,
     Expression<String>? externalEventId,
-    Expression<DateTime>? startDate,
-    Expression<DateTime>? endDate,
+    Expression<String>? fingerprint,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (scheduleId != null) 'schedule_id': scheduleId,
       if (classId != null) 'class_id': classId,
       if (day != null) 'day': day,
+      if (seg != null) 'seg': seg,
       if (externalEventId != null) 'external_event_id': externalEventId,
-      if (startDate != null) 'start_date': startDate,
-      if (endDate != null) 'end_date': endDate,
+      if (fingerprint != null) 'fingerprint': fingerprint,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5679,17 +5681,17 @@ class CalendarEventMappingRowsCompanion
       {Value<int>? scheduleId,
       Value<int>? classId,
       Value<int>? day,
+      Value<int>? seg,
       Value<String>? externalEventId,
-      Value<DateTime>? startDate,
-      Value<DateTime>? endDate,
+      Value<String>? fingerprint,
       Value<int>? rowid}) {
     return CalendarEventMappingRowsCompanion(
       scheduleId: scheduleId ?? this.scheduleId,
       classId: classId ?? this.classId,
       day: day ?? this.day,
+      seg: seg ?? this.seg,
       externalEventId: externalEventId ?? this.externalEventId,
-      startDate: startDate ?? this.startDate,
-      endDate: endDate ?? this.endDate,
+      fingerprint: fingerprint ?? this.fingerprint,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5706,14 +5708,14 @@ class CalendarEventMappingRowsCompanion
     if (day.present) {
       map['day'] = Variable<int>(day.value);
     }
+    if (seg.present) {
+      map['seg'] = Variable<int>(seg.value);
+    }
     if (externalEventId.present) {
       map['external_event_id'] = Variable<String>(externalEventId.value);
     }
-    if (startDate.present) {
-      map['start_date'] = Variable<DateTime>(startDate.value);
-    }
-    if (endDate.present) {
-      map['end_date'] = Variable<DateTime>(endDate.value);
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -5727,9 +5729,9 @@ class CalendarEventMappingRowsCompanion
           ..write('scheduleId: $scheduleId, ')
           ..write('classId: $classId, ')
           ..write('day: $day, ')
+          ..write('seg: $seg, ')
           ..write('externalEventId: $externalEventId, ')
-          ..write('startDate: $startDate, ')
-          ..write('endDate: $endDate, ')
+          ..write('fingerprint: $fingerprint, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8625,9 +8627,9 @@ typedef $$CalendarEventMappingRowsTableCreateCompanionBuilder
   required int scheduleId,
   required int classId,
   required int day,
+  required int seg,
   required String externalEventId,
-  required DateTime startDate,
-  required DateTime endDate,
+  required String fingerprint,
   Value<int> rowid,
 });
 typedef $$CalendarEventMappingRowsTableUpdateCompanionBuilder
@@ -8635,9 +8637,9 @@ typedef $$CalendarEventMappingRowsTableUpdateCompanionBuilder
   Value<int> scheduleId,
   Value<int> classId,
   Value<int> day,
+  Value<int> seg,
   Value<String> externalEventId,
-  Value<DateTime> startDate,
-  Value<DateTime> endDate,
+  Value<String> fingerprint,
   Value<int> rowid,
 });
 
@@ -8659,15 +8661,15 @@ class $$CalendarEventMappingRowsTableFilterComposer
   ColumnFilters<int> get day => $composableBuilder(
       column: $table.day, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get seg => $composableBuilder(
+      column: $table.seg, builder: (column) => ColumnFilters(column));
+
   ColumnFilters<String> get externalEventId => $composableBuilder(
       column: $table.externalEventId,
       builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get startDate => $composableBuilder(
-      column: $table.startDate, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get endDate => $composableBuilder(
-      column: $table.endDate, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => ColumnFilters(column));
 }
 
 class $$CalendarEventMappingRowsTableOrderingComposer
@@ -8688,15 +8690,15 @@ class $$CalendarEventMappingRowsTableOrderingComposer
   ColumnOrderings<int> get day => $composableBuilder(
       column: $table.day, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get seg => $composableBuilder(
+      column: $table.seg, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get externalEventId => $composableBuilder(
       column: $table.externalEventId,
       builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get startDate => $composableBuilder(
-      column: $table.startDate, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get endDate => $composableBuilder(
-      column: $table.endDate, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => ColumnOrderings(column));
 }
 
 class $$CalendarEventMappingRowsTableAnnotationComposer
@@ -8717,14 +8719,14 @@ class $$CalendarEventMappingRowsTableAnnotationComposer
   GeneratedColumn<int> get day =>
       $composableBuilder(column: $table.day, builder: (column) => column);
 
+  GeneratedColumn<int> get seg =>
+      $composableBuilder(column: $table.seg, builder: (column) => column);
+
   GeneratedColumn<String> get externalEventId => $composableBuilder(
       column: $table.externalEventId, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get startDate =>
-      $composableBuilder(column: $table.startDate, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get endDate =>
-      $composableBuilder(column: $table.endDate, builder: (column) => column);
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => column);
 }
 
 class $$CalendarEventMappingRowsTableTableManager extends RootTableManager<
@@ -8761,36 +8763,36 @@ class $$CalendarEventMappingRowsTableTableManager extends RootTableManager<
             Value<int> scheduleId = const Value.absent(),
             Value<int> classId = const Value.absent(),
             Value<int> day = const Value.absent(),
+            Value<int> seg = const Value.absent(),
             Value<String> externalEventId = const Value.absent(),
-            Value<DateTime> startDate = const Value.absent(),
-            Value<DateTime> endDate = const Value.absent(),
+            Value<String> fingerprint = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               CalendarEventMappingRowsCompanion(
             scheduleId: scheduleId,
             classId: classId,
             day: day,
+            seg: seg,
             externalEventId: externalEventId,
-            startDate: startDate,
-            endDate: endDate,
+            fingerprint: fingerprint,
             rowid: rowid,
           ),
           createCompanionCallback: ({
             required int scheduleId,
             required int classId,
             required int day,
+            required int seg,
             required String externalEventId,
-            required DateTime startDate,
-            required DateTime endDate,
+            required String fingerprint,
             Value<int> rowid = const Value.absent(),
           }) =>
               CalendarEventMappingRowsCompanion.insert(
             scheduleId: scheduleId,
             classId: classId,
             day: day,
+            seg: seg,
             externalEventId: externalEventId,
-            startDate: startDate,
-            endDate: endDate,
+            fingerprint: fingerprint,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

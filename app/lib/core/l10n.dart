@@ -1294,4 +1294,11 @@ class L10n {
   static String get calendarSyncFailed => t('同步失败', 'Sync failed');
   static String get calendarSyncNotConfigured => t(
       '请先选择日历', 'Please select a calendar first');
+  static String get shiftDnd => t('值班自动勿扰', 'Automatic shift Do Not Disturb');
+  static String get shiftDndSubtitle => t(
+      '每个班次开始时自动切换到勿扰，结束时恢复',
+      'Turn on Do Not Disturb at each shift start, restore when it ends');
+  static String get shiftDndNoPermission => t(
+      '需要勿扰权限，请在系统设置里允许本应用',
+      'Do Not Disturb permission required — allow this app in system settings');
 }

@@ -903,6 +903,7 @@ class AppRepository {
             isRest: Value(c.isRest),
             color: Value(c.color),
             alarmEnabled: Value(c.alarmEnabled),
+            extraSegments: Value(encodeShiftSegments(c.extraSegments)),
           ));
           classId = c.id!;
         } else {
@@ -917,6 +918,7 @@ class AppRepository {
                   isRest: Value(c.isRest),
                   color: Value(c.color),
                   alarmEnabled: Value(c.alarmEnabled),
+                  extraSegments: Value(encodeShiftSegments(c.extraSegments)),
                 ),
               );
         }
@@ -1495,42 +1497,44 @@ class AppRepository {
     return db.select(db.calendarEventMappingRows).get();
   }
 
-  /// 保存或更新一条日历事件映射（复合主键 `{scheduleId, classId, day}`）。
+  /// 保存或更新一条日历事件映射（复合主键 `{scheduleId, classId, day, seg}`）。
   Future<void> saveCalendarEventMapping({
     required int scheduleId,
     required int classId,
     required int day,
+    required int seg,
     required String externalEventId,
-    required DateTime startDate,
-    required DateTime endDate,
+    required String fingerprint,
   }) async {
     // 先删旧的（如果有），再插入新的。
     await (db.delete(db.calendarEventMappingRows)
           ..where((t) =>
               t.scheduleId.equals(scheduleId) &
               t.classId.equals(classId) &
-              t.day.equals(day)))
+              t.day.equals(day) &
+              t.seg.equals(seg)))
         .go();
     await db.into(db.calendarEventMappingRows).insert(
       CalendarEventMappingRowsCompanion.insert(
         scheduleId: scheduleId,
         classId: classId,
         day: day,
+        seg: seg,
         externalEventId: externalEventId,
-        startDate: startDate,
-        endDate: endDate,
+        fingerprint: fingerprint,
       ),
     );
   }
 
   /// 删除一条日历事件映射。
   Future<void> deleteCalendarEventMapping(
-      int scheduleId, int classId, int day) {
+      int scheduleId, int classId, int day, int seg) {
     return (db.delete(db.calendarEventMappingRows)
           ..where((t) =>
               t.scheduleId.equals(scheduleId) &
               t.classId.equals(classId) &
-              t.day.equals(day)))
+              t.day.equals(day) &
+              t.seg.equals(seg)))
         .go();
   }
 }

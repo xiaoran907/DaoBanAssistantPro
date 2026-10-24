@@ -27,6 +27,7 @@ object AlarmStore {
     private const val PREFS = "alarm_store"
     private const val KEY = "entries"
     private const val KEY_QUIET = "quiets"
+    private const val KEY_DND = "dnd_events"
 
     /** 一条已排定闹钟的全部参数，够 `AlarmScheduler.schedule` 原样再排一次。 */
     data class Entry(
@@ -66,6 +67,19 @@ object AlarmStore {
         val repeatTimes: List<Long> = emptyList(),
     )
 
+    /**
+     * 一条已排定的「勿扰切换」（值班时段自动勿扰，`AlarmScheduler.scheduleDnd`）。
+     *
+     * [dndOn] = 到点切到哪个状态：true = 切勿扰（PRIORITY），false = 恢复（ALL）。
+     * 每个时刻都是一次性触发（每班次开始 / 结束各一个，每次重排全量重建），
+     * 所以没有重复类型 / 铃声这些东西。
+     */
+    data class Dnd(
+        val id: Int,
+        val millis: Long,
+        val dndOn: Boolean,
+    )
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -99,6 +113,7 @@ object AlarmStore {
     /** 内存镜像。`null` = 还没读过。**所有访问都在 `@Synchronized` 里**。 */
     private var cachedEntries: MutableList<Entry>? = null
     private var cachedQuiets: MutableList<Quiet>? = null
+    private var cachedDnds: MutableList<Dnd>? = null
 
     /** 全量读。解析不出来的记录直接跳过 —— 一条坏数据不该让整份清单失效。 */
     @Synchronized
@@ -256,6 +271,60 @@ object AlarmStore {
         }
     }
 
+    @Synchronized
+    fun allDnds(context: Context): List<Dnd> {
+        cachedDnds?.let { return it }
+        val raw = prefs(context).getString(KEY_DND, null)
+        val parsed: List<Dnd> = if (raw == null) {
+            emptyList()
+        } else {
+            try {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val id = o.optInt("id", -1)
+                    val millis = o.optLong("millis", 0L)
+                    if (id < 0 || millis <= 0L) return@mapNotNull null
+                    Dnd(id = id, millis = millis, dndOn = o.optBoolean("dndOn", false))
+                }
+            } catch (e: Exception) {
+                AlarmLog.error(context, "AlarmStore.allDnds 解析失败，按空清单处理: ${e.message}")
+                emptyList()
+            }
+        }
+        val box = parsed.toMutableList()
+        cachedDnds = box
+        return box
+    }
+
+    @Synchronized
+    fun putDnd(context: Context, d: Dnd) {
+        try {
+            writeDnds(context, allDnds(context).filterNot { it.id == d.id } + d)
+        } catch (ex: Exception) {
+            AlarmLog.error(context, "AlarmStore.putDnd 失败: ${ex.message}")
+        }
+    }
+
+    @Synchronized
+    fun removeDnd(context: Context, id: Int) {
+        try {
+            writeDnds(context, allDnds(context).filterNot { it.id == id })
+        } catch (ex: Exception) {
+            AlarmLog.error(context, "AlarmStore.removeDnd 失败: ${ex.message}")
+        }
+    }
+
+    /** 按 id 区间清（`AlarmScheduler.cancelAllDnd` 扫的那一段）。 */
+    @Synchronized
+    fun clearDnds(context: Context, from: Int, to: Int) {
+        try {
+            writeDnds(context, allDnds(context).filterNot { it.id in from until to })
+        } catch (ex: Exception) {
+            AlarmLog.error(context, "AlarmStore.clearDnds 失败: ${ex.message}")
+        }
+    }
+
     private fun write(context: Context, list: List<Entry>) {
         cachedEntries = list.toMutableList()
         val arr = JSONArray()
@@ -295,6 +364,21 @@ object AlarmStore {
             )
         }
         prefs(context).edit().putString(KEY_QUIET, arr.toString()).apply()
+    }
+
+    private fun writeDnds(context: Context, list: List<Dnd>) {
+        cachedDnds = list.toMutableList()
+        val arr = JSONArray()
+        for (d in list) {
+            arr.put(
+                JSONObject().apply {
+                    put("id", d.id)
+                    put("millis", d.millis)
+                    put("dndOn", d.dndOn)
+                }
+            )
+        }
+        prefs(context).edit().putString(KEY_DND, arr.toString()).apply()
     }
 
     /** 时刻表 → JSON 数组（空表也写一个空数组，读的时候不必判 null）。 */

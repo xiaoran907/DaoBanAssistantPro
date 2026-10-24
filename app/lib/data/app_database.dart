@@ -362,12 +362,14 @@ class PayrollRecordRows extends Table {
 
 /// 系统日历事件映射表（#6 系统日历同步）。
 ///
-/// 存储 App 内部班次与系统日历事件的对应关系，用于幂等更新：
-/// - 已有映射 → updateEvent
+/// 存储 App 内部班次时段与系统日历事件的对应关系，用于幂等更新：
+/// - 已有映射且指纹一致 → 跳过
+/// - 已有映射且指纹变了 → updateEvent
 /// - 无映射 → createEvent
-/// - 已删除班次 → deleteEvent
+/// - 范围外 → deleteEvent
 ///
-/// 复合主键 `{scheduleId, classId, day}`：同一套方案的同一班次在同一天只有一条记录。
+/// 复合主键 `{scheduleId, classId, day, seg}`：**同一天可以有多个班次、一套方案
+/// 可以有多个时段**（多时段班次 + 周期多选班次），三键会撞车。
 /// **不设自增 id**：复合主键已唯一标识一行，不需要额外自增列。
 class CalendarEventMappingRows extends Table {
   /// 指向 `shift_schedule_rows.id`。
@@ -379,17 +381,17 @@ class CalendarEventMappingRows extends Table {
   /// 纯日期自 epoch 的天数（`dayNumber()`）。
   IntColumn get day => integer()();
 
+  /// 时段序号（主时段 0、额外时段 1..n，见 `ShiftClass.allSegments`）。
+  IntColumn get seg => integer()();
+
   /// 系统日历返回的 eventId（用于 update/delete）。
   TextColumn get externalEventId => text()();
 
-  /// 事件开始时间。
-  DateTimeColumn get startDate => dateTime()();
-
-  /// 事件结束时间。
-  DateTimeColumn get endDate => dateTime()();
+  /// 内容指纹：`key|title|startMs|endMs|desc`。与上次同步不一致 → updateEvent。
+  TextColumn get fingerprint => text()();
 
   @override
-  Set<Column> get primaryKey => {scheduleId, classId, day};
+  Set<Column> get primaryKey => {scheduleId, classId, day, seg};
 }
 
 @DriftDatabase(tables: [
@@ -445,21 +447,24 @@ class AppDatabase extends _$AppDatabase {
             await customStatement('DROP TABLE IF EXISTS payroll_settings_rows');
             await m.createTable(payrollMonthlyRows);
             // payroll_record_rows 主键变了：先备份旧数据，删表，重建，把旧数据搬过来（seq = 0）。
-            await customStatement('CREATE TABLE payroll_record_rows_v17_backup AS '
-                'SELECT * FROM payroll_record_rows');
-            await customStatement('DROP TABLE payroll_record_rows');
-            await m.createTable(payrollRecordRows);
-            await customStatement('INSERT INTO payroll_record_rows (year, month, seq, actual, note) '
-                'SELECT year, month, 0, actual, note FROM payroll_record_rows_v17_backup');
-            await customStatement('DROP TABLE payroll_record_rows_v17_backup');
+            // payroll_record_rows 主键变了：表存在（from ≥ 16）才需要重建搬数据
+            //（seq = 0）；≤v15 的库此刻还没有它（< 16 分支在下面才建），留给那个
+            // 分支按当前 schema 直接建 —— 硬 SELECT 会炸，这正是迁移测试抓到的。
+            if (from >= 16) {
+              await customStatement('DROP TABLE IF EXISTS payroll_record_rows_v17_backup');
+              await customStatement('CREATE TABLE payroll_record_rows_v17_backup AS '
+                  'SELECT * FROM payroll_record_rows');
+              await customStatement('DROP TABLE payroll_record_rows');
+              await m.createTable(payrollRecordRows);
+              await customStatement('INSERT INTO payroll_record_rows (year, month, seq, actual, note) '
+                  'SELECT year, month, 0, actual, note FROM payroll_record_rows_v17_backup');
+              await customStatement('DROP TABLE payroll_record_rows_v17_backup');
+            }
           }
           if (from < 16) {
             // 统计与薪资：三张新表（v16），一行既有数据都不碰。
-            // v18 会把 payroll_settings_rows 删掉，但这里先建出来，保证中间态一致。
-            // 用 raw SQL 建 payroll_settings_rows：PayrollSettingsRows 类已在 v18 废弃。
-            await customStatement('CREATE TABLE IF NOT EXISTS payroll_settings_rows ('
-                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
-                'monthly_wage REAL NOT NULL DEFAULT 0)');
+            // payroll_settings_rows 不再建：v18（上面）刚把它 DROP，且 v0.13 起
+            // 没有任何代码读它 —— 建出来只会留一张死表。
             await m.createTable(payrollDayRows);
             await m.createTable(payrollRecordRows);
           }

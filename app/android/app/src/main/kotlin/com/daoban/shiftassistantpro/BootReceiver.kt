@@ -130,6 +130,27 @@ class BootReceiver : BroadcastReceiver() {
         }
         AlarmLog.info(context, "BootReceiver: 提醒重排完成，$quiets 条")
 
+        // 勿扰切换（值班时段那条链路）：一次性时刻，规则与一次性闹钟一致 ——
+        // 还没到点的排回去，关机期间已经错过的不补切。错过一次「恢复」不要紧：
+        // 下一次班次开始的那条切换会再切；在开机瞬间连切两次反而制造状态跳变。
+        var dnds = 0
+        for (d in AlarmStore.allDnds(context)) {
+            if (d.millis <= now) {
+                AlarmStore.removeDnd(context, d.id)
+                continue
+            }
+            try {
+                AlarmScheduler.scheduleDnd(context, d.id, d.millis, d.dndOn)
+                dnds++
+            } catch (ex: Exception) {
+                AlarmLog.error(
+                    context,
+                    "BootReceiver: 重排勿扰 id=${d.id} 失败: ${ex.javaClass.name}: ${ex.message}"
+                )
+            }
+        }
+        AlarmLog.info(context, "BootReceiver: 勿扰重排完成，$dnds 条")
+
         // 小组件的刷新闹钟也重启即清空，同样要排回去。与上面两条链路的区别是：
         // 它没有「清单」可读 —— 边界时刻就在快照里，`scheduleNextRefreshIfNeeded`
         // 自己会挑第一个未来的。所以这里只是「叫醒它一次」。

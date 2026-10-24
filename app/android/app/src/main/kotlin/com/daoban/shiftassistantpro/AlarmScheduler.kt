@@ -37,6 +37,15 @@ object AlarmScheduler {
     const val RECURRING_BASE_ID = 40000
 
     /**
+     * 勿扰切换的原生 id 基址（id = 50000 + 班次日偏移 × 32 + 段序 × 2 + 开关位）。
+     *
+     * 每天留 32 个槽（16 段 × 开/关），8 天窗口共 256 个号，留到 50999。与
+     * 排班 0..600、自定义 10000+、待办 20000+、系列 40000+ 都隔开。
+     */
+    const val DND_BASE_ID = 50000
+    const val DND_DAY_SLOTS = 32
+
+    /**
      * 排一条「安静的」提醒：到点只弹一条通知，不响铃、不全屏、不进系统闹钟栏。
      *
      * 与 [schedule] 的两点不同，都是刻意的：
@@ -149,6 +158,78 @@ object AlarmScheduler {
         // 两份清单同步清掉这两段（清了之后 Dart 会把要留的重新排一遍）。
         AlarmStore.clearQuiets(context, TODO_BASE_ID, upper)
         AlarmStore.clearEntries(context, TODO_BASE_ID, upper)
+    }
+
+    /**
+     * 排一条「勿扰切换」：到点把系统勿扰切到 [dndOn] 指定的状态，不响铃、不弹通知。
+     *
+     * 与 [scheduleQuiet] 同样的三级退化（无精确权限 → 非精确；SecurityException →
+     * 再退一次），同样**落盘**给 BootReceiver。切换本身由 [DndReceiver] 执行。
+     */
+    fun scheduleDnd(context: Context, id: Int, millis: Long, dndOn: Boolean) {
+        val op = Intent(context, DndReceiver::class.java).apply {
+            putExtra("id", id)
+            putExtra("dndOn", dndOn)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, id, op,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !am.canScheduleExactAlarms()
+            ) {
+                AlarmLog.info(context, "scheduleDnd: 无精确闹钟权限，退化为非精确排定")
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pi)
+            } else {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pi)
+            }
+        } catch (e: SecurityException) {
+            AlarmLog.error(
+                context,
+                "scheduleDnd: setExact 被拒(${e.message})，退化为非精确排定"
+            )
+            try {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pi)
+            } catch (e2: Exception) {
+                AlarmLog.error(context, "scheduleDnd: 退化排定也失败: ${e2.message}")
+            }
+        }
+
+        // 与闹钟 / 提醒同样落盘一份：重启后 AlarmManager 里的记录会被清空，
+        // 只有这份清单能让 BootReceiver 把切换排回去。
+        AlarmStore.putDnd(context, AlarmStore.Dnd(id = id, millis = millis, dndOn = dndOn))
+    }
+
+    /**
+     * 取消全部勿扰切换。
+     *
+     * **每次重排都会先跑这一条**（勿扰计划是全量重建的），所以按落盘清单逐个撤
+     * + 一段盲扫兜底 —— 8 天窗口 × 每天最多 32 个号，盲扫 256 次可控。
+     */
+    fun cancelAllDnd(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val upper = DND_BASE_ID + DND_DAY_SLOTS * 8
+        val ids = mutableSetOf<Int>()
+        // ① 清单里记着的（准确、量小）
+        for (d in AlarmStore.allDnds(context)) {
+            if (d.id in DND_BASE_ID until upper) ids.add(d.id)
+        }
+        // ② 盲扫兜底：旧版本排下、清单里没有的那些
+        for (i in 0 until DND_DAY_SLOTS * 8) ids.add(DND_BASE_ID + i)
+        for (id in ids) {
+            try {
+                val pi = PendingIntent.getBroadcast(
+                    context, id,
+                    Intent(context, DndReceiver::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                am.cancel(pi)
+            } catch (_: Exception) {
+            }
+        }
+        AlarmStore.clearDnds(context, DND_BASE_ID, upper)
     }
 
     fun schedule(

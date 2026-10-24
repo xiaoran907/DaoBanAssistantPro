@@ -24,7 +24,7 @@ void main() {
     // ① 按当前 schema 建库。
     final first = AppDatabase.forTesting(NativeDatabase(file));
     await first.customSelect('SELECT 1').getSingle();
-    expect(first.schemaVersion, 18);
+    expect(first.schemaVersion, 19);
 
     // ② 模拟 v16：拨回版本号，把 payroll_settings_rows 换成旧 schema
     //   （daily_wage / daily_subsidy），灌一条旧数据；再往单日加项表灌一条。
@@ -60,7 +60,7 @@ void main() {
     // ③ 重开：drift 看到 user_version = 16 → 跑 from < 17 分支。
     final reopened = AppDatabase.forTesting(NativeDatabase(file));
     addTearDown(reopened.close);
-    expect(reopened.schemaVersion, 18);
+    expect(reopened.schemaVersion, 19);
 
     // ④ 新表 schema：有 wage，没有 monthly_wage / daily_wage / daily_subsidy。
     final cols = await reopened
@@ -92,7 +92,7 @@ void main() {
           PayrollMonthlyRowsCompanion.insert(
             year: 2025,
             month: 1,
-            wage: drift.Value(8000),
+            wage: const drift.Value(8000),
           ),
         );
     final after = await reopened.select(reopened.payrollMonthlyRows).get();

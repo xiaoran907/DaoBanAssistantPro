@@ -350,6 +350,9 @@ class ProfileScreen extends ConsumerWidget {
             SectionHeading(L10n.calendarSync),
             const _CalendarSyncCard(),
             const SizedBox(height: 16),
+            SectionHeading(L10n.shiftDnd),
+            const _ShiftDndCard(),
+            const SizedBox(height: 16),
             SectionHeading(L10n.sectionPermission),
             const _PermissionCheck(),
             const SizedBox(height: 16),
@@ -1311,7 +1314,7 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
             for (final cal in calendars)
               GlassPressable(
                 child: ListTile(
-                  leading: Icon(Icons.calendar_today_outlined),
+                  leading: const Icon(Icons.calendar_today_outlined),
                   title: Text(cal.name),
                   onTap: () => Navigator.pop(dialogContext, cal.id),
                 ),
@@ -1384,7 +1387,7 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(L10n.calendarSync, style: AppTokens.labelStrong),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: AppTokens.gapHair),
                       Text(L10n.calendarSyncSubtitle,
                           style: AppTokens.rowSecondary),
                     ],
@@ -1431,6 +1434,86 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// 值班自动勿扰卡片：开 → 每个班次开始时切到优先勿扰、结束时恢复。
+class _ShiftDndCard extends ConsumerStatefulWidget {
+  const _ShiftDndCard();
+
+  @override
+  ConsumerState<_ShiftDndCard> createState() => _ShiftDndCardState();
+}
+
+class _ShiftDndCardState extends ConsumerState<_ShiftDndCard> {
+  bool _enabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final sp = await SharedPreferences.getInstance();
+    final enabled = sp.getBool('dndEnabled') ?? false;
+    if (!mounted) return;
+    setState(() => _enabled = enabled);
+  }
+
+  Future<void> _toggleEnabled(bool v) async {
+    if (v) {
+      final granted = await AlarmService.checkDndPermission();
+      if (!granted) {
+        // vivo 等国产 ROM 的勿扰权限在系统设置里授；不回退开关会让「开着
+        // 但到点不切」挂在那里没解释 —— 先授权限再开。
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(L10n.shiftDndNoPermission)),
+        );
+        await AlarmService.openDndSettings();
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _enabled = v);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool('dndEnabled', v);
+    // 开：重排时把未来 8 天的切换时刻排进去；关：清掉已排的切换事件。
+    final repo = ref.read(appRepositoryProvider);
+    await AlarmService.rescheduleAll(repo);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassTile(
+      translucentFill: false,
+      padding: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const Icon(Icons.do_not_disturb_on_outlined,
+                size: AppTokens.iconMd),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(L10n.shiftDnd, style: AppTokens.labelStrong),
+                  const SizedBox(height: AppTokens.gapHair),
+                  Text(L10n.shiftDndSubtitle, style: AppTokens.rowSecondary),
+                ],
+              ),
+            ),
+            GlassSwitch(
+              value: _enabled,
+              onChanged: _toggleEnabled,
+            ),
+          ],
+        ),
       ),
     );
   }

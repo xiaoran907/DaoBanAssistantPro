@@ -241,6 +241,28 @@ List<_TableBackup> _tableBackups(AppDatabase db) => [
         },
       ),
       _TableBackup(
+        name: 'calendar_event_mapping_rows',
+        readJson: () async => [
+          for (final r in await (db.select(db.calendarEventMappingRows)
+                ..orderBy([
+                  (t) => OrderingTerm.asc(t.scheduleId),
+                  (t) => OrderingTerm.asc(t.classId),
+                  (t) => OrderingTerm.asc(t.day),
+                  (t) => OrderingTerm.asc(t.seg),
+                ]))
+              .get())
+            r.toJson(),
+        ],
+        writeRows: (rows) async {
+          for (final j in rows) {
+            await db.into(db.calendarEventMappingRows).insert(
+                  CalendarEventMappingRow.fromJson(j),
+                  mode: InsertMode.insertOrReplace,
+                );
+          }
+        },
+      ),
+      _TableBackup(
         name: 'custom_alarms',
         readJson: () async => [
           for (final r in await (db.select(db.customAlarms)

@@ -168,6 +168,101 @@ List<ShiftAlarmPlan> planShiftAlarms(
   return plans;
 }
 
+/// 「某天某个班次的某一段要切换勿扰」的一条决策结果。
+///
+/// [offset] 与 [planShiftAlarms] 的同义（距起点日的天数偏移）；原生 id 由
+/// [offset]、[segIndex] 与开关位一起算出（`偏移 × 32 + 段序 × 2 + 开关位`），
+/// 重排绝不能换号。
+class ShiftDndPlan {
+  const ShiftDndPlan({
+    required this.offset,
+    required this.segIndex,
+    required this.dndOn,
+    required this.at,
+  });
+
+  final int offset;
+
+  /// 这一段在班次 `allSegments` 里的下标（主时段 0、额外时段 1..n）。
+  final int segIndex;
+
+  /// true = 切勿扰（时段开始），false = 恢复（时段结束）。
+  final bool dndOn;
+
+  final DateTime at;
+}
+
+/// 决定「从**今天**起的 [days] 个班次日里，哪些时刻要切勿扰 / 恢复勿扰」。
+///
+/// 与 [planShiftAlarms] 同一条路的**纯**决策：不碰系统、不读 `DateTime.now()`
+/// （当前时刻由 [from] 传入）。每个班次时段出**两条**决策（开始切勿扰、结束
+/// 恢复）；跨午夜的时段结束落在次日。
+///
+/// 从**今天**起算（不是昨天）：勿扰的两个时刻都属于班次自己的那一天（或次日
+/// 结束），不会落到前一天 —— [planShiftAlarms] 从昨天起算的理由（次日档的闹钟
+/// 属于昨天的班次）在这里不存在。
+///
+/// 跳过条件：那天没有班次 / 是休班 / 班次没有任何时段。**不查**「按天关闹钟」
+/// 的覆盖（勿扰跟着「那天上什么班」走，按天改班已经反映在 [source.shiftOn]
+/// 的结果里）。开始已过的时段照样出结束那条 —— 排定侧只该跳过**已经过去**
+/// 的那条切换，结束仍常常在未来；所以逐条按 `at` 过滤，不在按段过滤。
+List<ShiftDndPlan> planShiftDnd(
+  ShiftSource source, {
+  required DateTime from,
+  required int days,
+}) {
+  final anchor = dateOnly(from);
+  final plans = <ShiftDndPlan>[];
+  for (var d = 0; d < days; d++) {
+    final date = anchor.add(Duration(days: d));
+    final shifts = source.shiftOn(date);
+    for (final t in shifts) {
+      if (t.isRest) continue;
+      final segs = t.allSegments;
+      for (var s = 0; s < segs.length; s++) {
+        final seg = segs[s];
+        // 时段两端都允许 ≥ 1440（跨午夜后继续累加），结束还有「end < start」
+        // 的回绕表示（22:00–06:00 存成 1320→360）—— 两种都要换算到正确的
+        // 那一天。DateTime(y, m, d + n) 重建再 add 的理由见 [shiftAlarmFireAt]。
+        final startDay = seg.startMinute ~/ 1440;
+        final startClock = seg.startMinute % 1440;
+        final e = seg.endMinute;
+        final int endDay;
+        final int endClock;
+        if (e >= 1440) {
+          endDay = e ~/ 1440;
+          endClock = e % 1440;
+        } else if (e < seg.startMinute) {
+          endDay = 1;
+          endClock = e;
+        } else {
+          endDay = 0;
+          endClock = e;
+        }
+        final dayBase = DateTime(date.year, date.month, date.day);
+        plans.add(ShiftDndPlan(
+          offset: d,
+          segIndex: s,
+          dndOn: true,
+          at: DateTime(dayBase.year, dayBase.month, dayBase.day + startDay)
+              .add(Duration(minutes: startClock)),
+        ));
+        plans.add(ShiftDndPlan(
+          offset: d,
+          segIndex: s,
+          dndOn: false,
+          at: DateTime(dayBase.year, dayBase.month, dayBase.day + endDay)
+              .add(Duration(minutes: endClock)),
+        ));
+      }
+    }
+  }
+  // 「这一刻已经过去的切换」不进计划：上午 9 点重排时，今天 8 点开工那条
+  // 切勿扰没意义了，但晚上 10 点下班那条恢复必须排上。逐条过滤而不是按段。
+  plans.removeWhere((p) => !p.at.isAfter(from));
+  return plans;
+}
+
 /// 一条重复待办提醒的排定计划。
 ///
 /// 队首（[fireAt]）现在排给原生；[repeatTimes] 是它后面还跟着的几次 —— 一起递
@@ -311,6 +406,20 @@ class AlarmService {
 
   /// 重复待办提醒的原生 id 基址（id = `40000 + 系列 id`）。
   static const _recurringBaseId = 40000;
+
+  /// 勿扰切换的原生 id 基址（id = `50000 + 天数偏移 × 32 + 段序 × 2 + 开关位`）。
+  ///
+  /// 每班次时段出两条（开始切勿扰 / 结束恢复），每天留 32 个槽（16 段）、
+  /// 8 天窗口共 256 个号，与上面四段都隔开。原生侧 `AlarmScheduler.DND_BASE_ID`
+  /// 与 `cancelAllDnd` 的扫描范围与它成对。
+  static const _dndBaseId = 50000;
+
+  /// 勿扰窗口的「每天槽位」与「天数」。
+  ///
+  /// 8 天足够：勿扰计划每次重排全量重建（冷启动 / 回前台 / 编辑排班都走），
+  /// 不承担班次闹钟那个「长期不开 App 也不丢」的 60 天窗口。
+  static const _dndDaySlots = 32;
+  static const _dndDaysHorizon = 8;
 
   static Future<void> init() async {
     // ⚠️ **不要再把 `tz.initializeTimeZones()` 加回来**（2026-10-10 删）。
@@ -580,6 +689,43 @@ class AlarmService {
   static Future<void> cancelAllNotificationAlarms() async {
     try {
       await _settingsChannel.invokeMethod('cancelAllNotificationAlarms');
+    } catch (_) {}
+  }
+
+  /// 排一条勿扰切换（到点由原生 DndReceiver 切勿扰 / 恢复，不响铃不弹通知）。
+  static Future<void> scheduleNativeDnd(int id, DateTime at, bool dndOn) async {
+    try {
+      await _settingsChannel.invokeMethod('scheduleNativeDnd', {
+        'id': id,
+        'millis': at.millisecondsSinceEpoch,
+        'dndOn': dndOn,
+      });
+    } catch (e) {
+      await appendLog('scheduleNativeDnd 失败: $e');
+    }
+  }
+
+  /// 取消全部勿扰切换。
+  static Future<void> cancelAllNativeDnd() async {
+    try {
+      await _settingsChannel.invokeMethod('cancelAllNativeDnd');
+    } catch (_) {}
+  }
+
+  /// 是否已授予「勿扰访问」权限（值班时段自动勿扰的前提；特殊权限，
+  /// 需要用户在系统设置里手动开）。
+  static Future<bool> checkDndPermission() async {
+    try {
+      return await _settingsChannel.invokeMethod('checkDndPermission') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 打开系统的「勿扰访问」授权页。
+  static Future<void> openDndSettings() async {
+    try {
+      await _settingsChannel.invokeMethod('openDndSettings');
     } catch (_) {}
   }
 
@@ -944,6 +1090,10 @@ class AlarmService {
   /// 与其让每个调用点抄一遍，不如在这里读齐。漏传一个参数不会报错，只会让
   /// 那类提醒静默不生效，所以这个「读齐」的动作只该有一份。
   static Future<void> rescheduleAll(AppRepository repo) async {
+    // 日历同步与闹钟 / 待办的 tab 开关无关：它只读自己的 calendarSyncEnabled。
+    // 必须在下面两个 gate 之前 —— 否则关掉闹钟（或待办）tab 的用户改了排班，
+    // 「删旧事件」那半边会被 gate 挡在外面，日历上挂着已不存在的时间段。
+    await _syncCalendarIfNeeded(repo);
     final navConfig = await _readNavConfig();
     if (!navConfig.isAlarmEnabled) return;
     // 读的是**整条链**：未来 60 天里可能跨时段边界，边界之后那几天的班属于别的
@@ -960,13 +1110,6 @@ class AlarmService {
     // 重复待办的提醒走独立号段，与上面那条链路互不影响（`reschedule` 里的
     // 待办那一段会跳过带 `seriesId` 的行）。
     await rescheduleRecurringReminders(await repo.listRecurringTodos());
-
-    // #6 系统日历同步：排班结构变了，同步到系统日历。
-    final calendarSyncEnabled = await _isCalendarSyncEnabled();
-    if (calendarSyncEnabled) {
-      final service = CalendarSyncService(repo);
-      await service.sync();
-    }
   }
 
   static Future<NavTabConfig> _readNavConfig() async {
@@ -985,6 +1128,15 @@ class AlarmService {
       return sp.getBool('calendarSyncEnabled') ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// 日历同步的统一入口（只读自己的开关，与闹钟 / 待办的 tab 开关无关）。
+  static Future<void> _syncCalendarIfNeeded(AppRepository repo) async {
+    final calendarSyncEnabled = await _isCalendarSyncEnabled();
+    if (calendarSyncEnabled) {
+      final service = CalendarSyncService(repo);
+      await service.sync();
     }
   }
 
@@ -1092,11 +1244,44 @@ class AlarmService {
     // 3) 待办提醒：普通通知，不进闹钟那套（全屏 + 循环响铃对一条待办太重）。
     //    每条待办只有一个日期、没有重复，所以一次排完就是全部。
     await rescheduleEventReminders(events);
+
+    // 4) 值班时段自动勿扰：班次时段内切勿扰、结束恢复。
+    await _rescheduleDnd(source);
     // 一条汇总顶掉从前「每排一条闹钟跟一条日志」那一批（跨端调用因此从 99 降到 53，
     // 见 `alarm_reschedule_budget_test.dart` 与规格 §2）。
     await logInfo('reschedule: 完成 —— 班次闹钟 ${shiftPlans.length} 条、'
         '自定义 ${customAlarms.where((a) => a.enabled).length} 个（启用）、'
         '待办事件 ${events.length} 条，耗时 ${sw.elapsedMilliseconds}ms');
+  }
+
+  /// 值班时段自动勿扰的重排：先清掉全部，再照 [planShiftDnd] 重排。
+  ///
+  /// 开关在这里自查（[reschedule] 被多处调用，回前台那条路没有外层 gate，
+  /// 勿扰开没开只有 prefs 知道）。**开关没开也要先清一遍** —— 用户刚关掉开关
+  /// 的话，原生里排着的切换不能留。
+  static Future<void> _rescheduleDnd(ShiftSource source) async {
+    await cancelAllNativeDnd();
+    final sp = await SharedPreferences.getInstance();
+    if (!(sp.getBool('dndEnabled') ?? false)) return;
+    final navConfig = await _readNavConfig();
+    if (!navConfig.isAlarmEnabled) return;
+    final plans = planShiftDnd(source,
+        from: DateTime.now(), days: _dndDaysHorizon);
+    for (final p in plans) {
+      try {
+        await scheduleNativeDnd(
+          _dndBaseId +
+              p.offset * _dndDaySlots +
+              p.segIndex * 2 +
+              (p.dndOn ? 0 : 1),
+          p.at,
+          p.dndOn,
+        );
+      } catch (e) {
+        await appendLog('_rescheduleDnd: 排定失败: $e');
+      }
+    }
+    await logInfo('_rescheduleDnd: ${plans.length} 条');
   }
 
   /// 只重排待办提醒（待办增删改之后调用）。

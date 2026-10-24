@@ -2,6 +2,7 @@ package com.daoban.shiftassistantpro
 
 import android.app.ActivityManager
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -625,6 +626,52 @@ class MainActivity : FlutterActivity() {
                                 result.error("CANCEL_ALL_NOTIF_ALARM_FAILED", e.message, null)
                             }
                         }.start()
+                    }
+                    "scheduleNativeDnd" -> {
+                        try {
+                            val id = call.argument<Int>("id") ?: -1
+                            val millis = call.argument<Long>("millis") ?: 0L
+                            val dndOn = call.argument<Boolean>("dndOn") ?: false
+                            if (id < 0) {
+                                result.error("BAD_ARGS", "id 缺失", null)
+                            } else {
+                                AlarmScheduler.scheduleDnd(this, id, millis, dndOn)
+                                result.success(null)
+                            }
+                        } catch (e: Exception) {
+                            AlarmLog.error(this, "scheduleNativeDnd 失败: ${e.javaClass.name}: ${e.message}")
+                            result.error("SCHEDULE_DND_FAILED", e.message, null)
+                        }
+                    }
+                    "cancelAllNativeDnd" -> {
+                        // 勿扰计划也是全量重建，每次重排先扫一遍；256 次 cancel
+                        // 虽然便宜，仍与其它取消一样放后台线程。
+                        Thread {
+                            try {
+                                AlarmScheduler.cancelAllDnd(this)
+                                result.success(null)
+                            } catch (e: Exception) {
+                                result.error("CANCEL_ALL_DND_FAILED", e.message, null)
+                            }
+                        }.start()
+                    }
+                    "checkDndPermission" -> {
+                        try {
+                            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                            result.success(nm.isNotificationPolicyAccessGranted)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "openDndSettings" -> {
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                            )
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("OPEN_DND_FAILED", e.message, null)
+                        }
                     }
                     "getPendingAlarm" -> {
                         // 冷启动那次：把标签与说明一起给出去，读完两个都清空。

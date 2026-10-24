@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
+    <!-- 值班时段自动勿扰：需要用户在系统设置里授予「勿扰访问权」（特殊权限，
+         不是运行时权限），声明后才能查 isNotificationPolicyAccessGranted / 切勿扰。 -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
     <application
         android:label="倒班助手Pro"
         android:name="${applicationName}"
@@ -68,6 +71,9 @@
         </receiver>
         <!-- 待办提醒：到点弹普通通知（与响铃闹钟那条链路分开，见 TodoReminderReceiver）。 -->
         <receiver android:name=".TodoReminderReceiver" android:exported="false" />
+        <!-- 值班时段自动勿扰：到点切勿扰 / 恢复（见 DndReceiver）。同样只被
+             PendingIntent 隐式引用，显式声明防 R8 裁掉。 -->
+        <receiver android:name=".DndReceiver" android:exported="false" />
         <!-- 桌面小组件：三张固定卡 + 一个刷新广播的落点。
              label 走 res/values/strings.xml（中英各一份），跟随**系统语言**。
              必须在这里显式声明：release 构建 isMinifyEnabled = true，
