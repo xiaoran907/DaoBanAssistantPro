@@ -36,6 +36,7 @@ void _stubPluginChannels() {
   for (final name in const [
     'dexterous.com/flutter/local_notifications',
     'com.daoban.shiftassistantpro/settings',
+    'plugins.flutter.io/shared_preferences',
   ]) {
     messenger.setMockMethodCallHandler(MethodChannel(name), (call) async => null);
     addTearDown(

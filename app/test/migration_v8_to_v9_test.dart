@@ -127,7 +127,7 @@ void main() {
     final back = await repo.listTemplates();
     expect(back, hasLength(1));
     expect(back.single.name, '零点班那套');
-    expect(back.single.cycle, [0, 1]);
+    expect(back.single.cycle, const [[0], [1]]);
     expect(back.single.teamCount, 2);
     expect(back.single.teamOffsets, [0, 1]);
     expect(back.single.classes.map((c) => c.name), ['白班', '休班']);

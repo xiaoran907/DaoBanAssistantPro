@@ -329,7 +329,7 @@ void main() {
       await repo.setPayrollConfig(const PayrollConfig(monthlyWage: 320));
       final result = await run();
       expect(result.outcome, WebDavSyncOutcome.uploaded);
-      expect(dav.files[remotePath]!.body.contains('payroll_settings_rows'), isTrue);
+      expect(dav.files[remotePath]!.body.contains('payroll_monthly_rows'), isTrue);
     });
 
     test('两边都变：自动路径不选边；手动保留本地会先把云端那份留底', () async {

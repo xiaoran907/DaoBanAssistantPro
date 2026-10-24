@@ -25,6 +25,8 @@ import '../../domain/shift_rotation.dart';
 ///
 /// v2（2026-09-20）：窗口从「今天起 14 天」改成「按月对齐的绝对窗口」；
 /// `days[]` 删 `abbrInk`、增 `lunarShort` / `lunarIsHoliday`；顶层增 `weekdays` / `months`。
+/// v3（2026-10-23）：`days[]` 增 `shifts` / `shiftsOverflow` —— 一天可以有多时段，
+/// 格子改成多胶囊堆叠（原生侧的字段在 `WidgetStore.kt`）。
 /// 换版本号是有意的：升级时旧快照一律解不开 → 渲染占位态，直到第一次 push。
 const int kWidgetSnapshotVersion = 3;
 

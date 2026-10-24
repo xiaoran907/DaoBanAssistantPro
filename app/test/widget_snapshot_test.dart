@@ -197,7 +197,7 @@ void main() {
     expect(dayOf(25)['lunarShort'], '中秋节');
   });
 
-  test('协议版本是 2', () {
+  test('协议版本是 3', () {
     final s = buildWidgetSnapshot(
       chain: null,
       now: DateTime(2026, 9, 20, 10),
@@ -205,7 +205,7 @@ void main() {
       accent: 0xFF4F5BE8,
       todayTodoCount: 0,
     );
-    expect(s['v'], 2);
+    expect(s['v'], 3);
   });
 
   test('空白表（schedule=null）仍按窗口天数产出空行，并带上空表提示', () {

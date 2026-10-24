@@ -138,7 +138,13 @@ void main() {
     ));
     await _pumpFrames(tester);
 
-    await tester.ensureVisible(find.text(L10n.snoozeDuration));
+    // 设置页是 `ListView`（懒构建），而它还在变长（本轮又多了「值班勿扰 / 日历同步」两行）：
+    // 不滚到看得见为止，「贪睡时长」根本不在树上（同 `glass_pill_height_test`）。
+    await tester.scrollUntilVisible(
+      find.text(L10n.snoozeDuration),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await _pumpFrames(tester, frames: 6);
 
     expect(find.text(L10n.snoozeDuration), findsOneWidget);

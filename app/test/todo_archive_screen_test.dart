@@ -19,6 +19,7 @@ import 'package:shiftassistantpro/core/widgets/glass_delete_button.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
 import 'package:shiftassistantpro/domain/recurring_todo.dart';
 import 'package:shiftassistantpro/domain/shift_rotation.dart';
+import 'package:shiftassistantpro/features/home/glass_nav_bar.dart';
 import 'package:shiftassistantpro/features/home/home_shell.dart';
 import 'package:shiftassistantpro/features/schedule/schedule_screen.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
@@ -75,6 +76,7 @@ void main() {
   setUp(() async {
     L10n.locale = 'zh';
     _stubPluginChannels();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     db = AppDatabase.forTesting(
         NativeDatabase.opened(sqlite3.sqlite3.openInMemory()));
     repo = AppRepository(db);
@@ -388,19 +390,20 @@ void main() {
     ));
     await _settle(tester, frames: 30);
 
-    final Rect nav = tester.getRect(find.byKey(const Key('glass-nav-bar')));
+    final Rect nav = tester.getRect(find.byType(GlassNavBar));
     Future<void> tapTab(double f) async {
       await tester.tapAt(Offset(nav.left + nav.width * f, nav.center.dy));
       await _settle(tester);
     }
 
-    await tapTab(0.62); // 待办
+    // #5 起默认 5 个 tab，待办在正中（第 3 格）。
+    await tapTab(0.5); // 待办
     await tester.tap(find.byType(GlassCheck).first);
     await _settle(tester);
     expect(find.text(L10n.undo), findsOneWidget);
 
     await tapTab(0.12); // 切走：待办页被销毁
-    await tapTab(0.62); // 切回来：那一条已经归档，提示条还挂着
+    await tapTab(0.5); // 切回来：那一条已经归档，提示条还挂着
 
     await tester.tap(find.text(L10n.undo));
     await _settle(tester);

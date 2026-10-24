@@ -426,7 +426,11 @@ class ShiftSchedule implements ShiftSource {
   ///
   /// 不能写成「两边都空」也不能只看 `cycle`：按月模式下周期本来就是空的，那样
   /// 每一套按月方案都会被当成空白表 —— 日历整月不画胶囊、桌面小组件写「还没有排班」。
-  bool get isBlank => monthly ? monthlySegments.isEmpty : cycle.any((d) => d.isEmpty);
+  /// 周期这达用 `every` 不是 `any`：某天全不勾只是「那天没班」，只有**每一天**都没班
+  ///（或一行周期都没有，编辑器的「跟随法定节假日」存的就是它）才算空白 —— `any`
+  /// 会把带休班日的正常排班也判成空白，空表上 `every` 恒为 true 正好接住 `cycle = []`。
+  bool get isBlank =>
+      monthly ? monthlySegments.isEmpty : cycle.every((d) => d.isEmpty);
 
   final String name;
 

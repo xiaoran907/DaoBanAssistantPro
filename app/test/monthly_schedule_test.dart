@@ -89,10 +89,10 @@ void main() {
     }
   });
 
-  test('段指到一个不存在的班次下标：返回 null，不抛', () {
+  test('段指到一个不存在的班次下标：返回空列表，不抛', () {
     final s = monthSchedule(
         segments: const [MonthlySegment(startDay: 1, classIndex: 9)]);
-    expect(s.shiftOn(DateTime(2026, 3, 3)), isNull);
+    expect(s.shiftOn(DateTime(2026, 3, 3)), isEmpty);
   });
 
   test('段表全指向休班：不报撞班', () {

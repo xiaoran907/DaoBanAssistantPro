@@ -10,15 +10,19 @@
 //  ④ `clearAll` 要把新表也清掉（AGENTS 里那条「清空要连带删」的老规矩）。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
 import 'package:shiftassistantpro/domain/recurring_todo.dart';
 import 'package:shiftassistantpro/domain/shift_rotation.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AppDatabase db;
   late AppRepository repo;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     db = AppDatabase.forTesting(NativeDatabase.memory());
     repo = AppRepository(db);
     await repo.ensureSeeded();

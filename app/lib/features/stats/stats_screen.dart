@@ -175,7 +175,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               variant: GlassActionVariant.secondary,
               onPressed: () {
                 ctrl.text = '100';
-                ctrl.selection = TextSelection.collapsed(offset: 3);
+                ctrl.selection = const TextSelection.collapsed(offset: 3);
               },
               label: L10n.statsExtraQuick100,
             ),

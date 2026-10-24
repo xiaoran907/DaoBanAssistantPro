@@ -22,14 +22,12 @@ import '../../core/widgets/glass_pressable.dart';
 import '../../core/widgets/glass_sheet_header.dart';
 import '../../core/widgets/glass_snackbar.dart';
 import '../../data/app_repository.dart';
-import '../../domain/day_summary.dart';
 import '../../domain/lunar_info.dart';
 import '../../domain/schedule_chain.dart';
 import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
 import '../alarm/alarm_service.dart';
 import '../widget/widget_service.dart';
-import 'info_card_metrics.dart';
 import 'calendar_lens.dart';
 import 'lens_warp_scope.dart';
 import 'calendar_range_band.dart';
@@ -37,31 +35,6 @@ import 'range_band.dart';
 import 'schedule_management_screen.dart';
 import 'schedule_span_label.dart';
 import 'shift_override_picker.dart';
-
-/// 月历主界面：简约灰白背景 + 磨砂卡片日期格 + 农历 + 可拖拽玻璃选择块 + 底部信息卡。
-/// 一行文字在给定样式与缩放下的**自然行高**。
-///
-/// 信息卡那行班次用它把行高钉死：外面套的那层 `FittedBox` 会连高度一起缩，
-/// 于是「三条闹钟」那天的一行会比「一条」那天矮几 dp —— 而卡片高度**不许**
-/// 跟着当天内容变（`calendar_screen_test.dart` 那条用例盯着）。
-///
-/// 与 `info_card_metrics.dart` 量同一行用的是同一个办法（同一个样式、同一串
-/// 占位文字），两处必须同源。
-double _oneLineHeight(BuildContext context, TextStyle style) {
-  // **必须 `merge` 环境样式，不能只抄字体族。**
-  //
-  // `info_card_metrics.dart` 的 `_Measure.text` 用的是 `def.style.merge(style)` ——
-  // 于是行高里带着环境那层的 `height`（Material 的 1.43）。只抄 family 的话量出来
-  // 会矮 7dp，而卡片高度正是拿它钉的：卡片比内容高出 7dp，白占网格，
-  // `calendar_screen_test.dart` 那条用例当场就红（v0.11.12 栽过一次）。
-  final def = DefaultTextStyle.of(context);
-  final painter = TextPainter(
-    text: TextSpan(text: '班次', style: def.style.merge(style)),
-    textDirection: TextDirection.ltr,
-    textScaler: MediaQuery.textScalerOf(context),
-  )..layout();
-  return painter.height;
-}
 
 /// 量一段文字在给定样式与缩放下的宽度。
 ///
@@ -77,16 +50,13 @@ double _textWidth(String text, TextStyle style, TextScaler scaler) {
   return painter.width;
 }
 
-/// 与**这个月**有关、且只跟**方案本身**有关的那两样（见 `_factsFor`）。
+/// 与**这个月**有关、且只跟**方案本身**有关的那一样（见 `_factsFor`）。
 ///
-/// 它们原来每次重建都要重算（各是整月 × 一次链查询 + 拼字符串），而输入只跟
-/// 「哪个月 / 哪条链 / 什么语言」有关 —— 与「选中哪天」「这一帧那枚块在哪」都无关。
+/// 它原来每次重建都要重算（整月 × 一次链查询），而输入只跟
+/// 「哪个月 / 哪条链」有关 —— 与「选中哪天」「这一帧那枚块在哪」都无关。
 @immutable
 class _MonthFacts {
-  const _MonthFacts({required this.tally, required this.hasNoSchedule});
-
-  /// 信息卡最后那行「本月 早12 · 午8 · 夜8 · 休6」（没有班次时为 null）。
-  final String? tally;
+  const _MonthFacts({required this.hasNoSchedule});
 
   /// 整月**一天班表都没有**（指路那层用它判要不要盖）。
   final bool hasNoSchedule;
@@ -228,73 +198,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   /// 中心等于不挤（那一格的 `t` 恒为 0）。带子每帧把位置回调上来（`onTipPos`）。
   double? _rangeTipPos;
 
-  /// 底栏信息卡高度的**上一次**计算结果。
+  /// 与**这个月**有关、且**只跟方案本身**有关的那样 —— 一次算好，键变了才重量。
   ///
-  /// 高度只跟「月份 / 排班 / 宽度 / 语言 / 系统字号」有关，跟选中哪天无关 ——
-  /// 这正是它不随点日期抖动的原因。而这几样在一次拖动里都不会变，所以量一次
-  /// 缓存住即可：`_dayRows` 每帧都重建，量一次要排三十来个 `TextPainter`。
-  /// 只留一条（同时只会显示一个月的卡片），键变了就重量。
-  String? _cardMetricsKey;
-  InfoCardMetrics? _cardMetrics;
-
-  /// 本月里有没有**未完成**的待办。
+  /// 为什么只关它、而不关「有没有未完成的待办」与「有没有被按天调过」：后面两样依赖
+  /// **数据**（待办表、按天覆盖表），关进缓存就会在「调整了一次班次」之后拿到旧值。
+  /// 它们本来也便宜（一次扫待办 / 整月 `scheduleOn`），现算即可。
   ///
-  /// 信息卡日期行上的「N 项待办」徽章只在有待办的日子画，而卡片是定高的 ——
-  /// 高度必须按**月**预留（有一天可能有就留），按天算的话点一天高度变一次，
-  /// 上面的网格跟着抖。
-  ///
-  /// ⚠️ **`ref.watch` 就在这一句里，而它必须每次 build 都跑到** —— 别把它挪进
-  /// 「缓存命中就提前返回」的那条路（那等于勾一条待办时这一页不再重建，徽章停住）。
-  /// 这也是它**不进 [_factsFor]** 的原因之一（另一个原因是它依赖**数据**，
-  /// 而 [_factsFor] 的键只跟方案与月份有关）。
-  bool get _monthHasPendingTodos {
-    final events = ref.watch(eventsProvider).valueOrNull;
-    if (events == null) return false;
-    // `e.date` 是 `dateOnly` 存的 UTC 纯日期，年月日与本地日期一致，直接取用。
-    return events.any((e) =>
-        !e.isCompleted &&
-        e.date.year == _month.year &&
-        e.date.month == _month.month);
-  }
-
-  /// 本月里有没有被**按天调整过**的日子。
-  ///
-  /// 与 `_monthHasPendingTodos` 一样**每次重建现算**（不进 [_factsFor] 那份缓存）：
-  /// 它依赖按天覆盖，而 `chain.cacheKey` **不含覆盖**（那个指纹只覆盖「会影响信息卡
-  /// 高度的方案特征」—— 见 `schedule_chain.dart` 的 `_sourceKey`）。把它关进缓存，
-  /// 「已调班」胶囊那点高度就再也不会留出来（缓存键不变 ⇒ 永远不重量）。
-  bool _monthHasOverrideHint(ScheduleChain? chain) =>
-      chain?.monthHasOverrideHint(_month) ?? false;
-
-  /// 与**这个月**有关、且**只跟方案本身**有关的那两样 —— 一次算好，键变了才重量。
-  ///
-  /// 为什么是这两样、而不是全部五样：它们才是每次重建都要重算的大头
-  /// （`monthTallyFor` 是整月 × `shiftOn` + 拼字符串，`_computeMonthHasNoSchedule`
-  /// 是整月 × `hasScheduleOn`），而它们的输入**恰好就是** `chain.cacheKey` 覆盖的
-  /// 那些（组名 / 简称 / 空白表 / 时段）。
-  ///
-  /// 「有没有未完成的待办」与「有没有被按天调过」**不进这里**：它们依赖**数据**
-  /// （待办表、按天覆盖表），而 `chain.cacheKey` 不含后者 —— 关进缓存就会在
-  /// 「调整了一次班次」之后拿到旧值（`已调班` 胶囊的高度再也不留）。那两样本来
-  /// 也便宜（一次扫待办 / 整月 `scheduleOn`），现算即可。
-  ///
-  /// ⚠️ 键里**必须有语言**：`monthTallyFor` 那一行是本地化的（`L10n.monthTally`
-  /// 与班次简称都可能随语言变）。
+  /// 键用 [ScheduleChain.cacheKey] 就够：这一样只问「那天有没有班表在管」
+  /// （`hasScheduleOn`），而它只看段表与兜底那套在不在 —— `cacheKey` 两者都含。
+  /// 按天改班 / 周期 / 基准日那些不影响它，用更宽的 [ScheduleChain.rotationKey]
+  /// 只会让「调一次班」之后白算一遍整月遍历。
   _MonthFacts _factsFor(ScheduleChain? chain) {
     final String key = <String>[
       _month.year.toString(),
       _month.month.toString(),
-      L10n.isEn.toString(),
-      // ⚠️ **`rotationKey` 而不是 `cacheKey`**：后者的注释自己写着它是「会影响
-      // 信息卡高度」的指纹，**不含基准日 / 周期 / 班组错位 / 按天改班** —— 用它当键
-      // 的话，「调一次班」之后这一行会一直显示旧数字（独立审查抓的）。
-      chain?.rotationKey ?? '-',
+      chain?.cacheKey ?? '-',
     ].join('|');
     if (key == _factsKey && _facts != null) return _facts!;
-    final _MonthFacts f = _MonthFacts(
-      tally: monthTallyFor(chain, _month),
-      hasNoSchedule: _computeMonthHasNoSchedule(chain),
-    );
+    final _MonthFacts f =
+        _MonthFacts(hasNoSchedule: _computeMonthHasNoSchedule(chain));
     _factsKey = key;
     _facts = f;
     return f;
@@ -303,14 +225,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   _MonthFacts? _facts;
   String? _factsKey;
 
-  /// 本月里有没有被**按天调整过**的日子。
-  ///
-  /// 与 `_monthHasPendingTodos` 同一个道理：班次行尾巴上的「已调班」胶囊只在被
-  /// 改过的那天画，而信息卡是定高的 —— 高度必须按**月**预留（这个月有被调过就
-  /// 留），按天算的话点一天高度变一次，上面的网格跟着抖。
-  ///
-  /// 判定挪进 `ScheduleChain.monthHasOverrideHint`：跨时段的一个月里被改过的那天
-  /// 可能归**另一套**方案，得逐天问「那天归哪套」—— 那正是链才知道的事。
   /// 这一帧「挤压场的中心」—— 42 格那层读它（`LensWarpScope`）。
   ///
   /// ⚠️ **只许从 [_publishFrame] 写**：帧间（`Ticker` / 指针 / 带子回调）用
@@ -388,41 +302,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       _lensCenter.publish(center);
       _blockFrame.publish(f);
     }
-  }
-
-  /// 底栏信息卡该多高、以及本月每一天各自的内容高度（见 `info_card_metrics.dart`）。
-  InfoCardMetrics _cardMetricsFor(
-      BuildContext context, ScheduleChain? chain, double cardOuterWidth) {
-    final bool hasTodoHint = _monthHasPendingTodos;
-    final bool hasOverrideHint = _monthHasOverrideHint(chain);
-    final key = [
-      _month.year,
-      _month.month,
-      cardOuterWidth.toStringAsFixed(1),
-      L10n.isEn,
-      // 系统字号：`TextScaler` 可能是非线性的，拿某一档的实际缩放当代表值。
-      MediaQuery.textScalerOf(context).scale(14).toStringAsFixed(3),
-      // **整条链**的指纹：哪几套方案、各自的时段与内容（组名、班次简称、是否
-      // 空白表）。少了它，跨时段时会拿到上一条链算出来的高度 —— 而卡片装不下时
-      // **只在卡内静默滚动**（末行被裁掉，没有任何报错）。
-      chain?.cacheKey ?? '-',
-      // 有待办的那天日期行要多留一点（徽章比日期字高），按月参与。
-      hasTodoHint,
-      // 这个月有被按天调过的日子时，班次行要给「已调班」胶囊留高度，也按月。
-      hasOverrideHint,
-    ].join('|');
-    if (key == _cardMetricsKey && _cardMetrics != null) return _cardMetrics!;
-    final m = measureBottomInfoCardHeight(
-      context: context,
-      cardOuterWidth: cardOuterWidth,
-      chain: chain,
-      month: _month,
-      hasTodoHint: hasTodoHint,
-      hasOverrideHint: hasOverrideHint,
-    );
-    _cardMetricsKey = key;
-    _cardMetrics = m;
-    return m;
   }
 
   /// 信息卡最后那行「本月 早12 · 午8 · 夜8 · 休6」：**整个月**各上几天什么班。
@@ -887,8 +766,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           return Column(
             children: [
               _header(context),
-              // v0.13：删今日信息卡，信息合并到格子里。
-              if (!layout.isShort) grid,
+              // 小窗（isShort）从前在这里隐藏网格给信息卡让位；卡已删（D31），
+              // 那个理由跟着消失 —— 网格任何时候都画（D36 的处方，先落这一半）。
+              grid,
             ],
           );
         })),
@@ -911,7 +791,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   ///
   /// 固定件全是量得出来的：左右留白、三个圆形钮、四个 `gapIconText`、两个胶囊的
   /// 内边距、「今天」胶囊里的图标与文字；可变件只有年月那一串。
-  bool _oneRowFits(BuildContext context) {
+  bool _oneRowFits(BuildContext context, {bool compactToday = false}) {
     final scaler = MediaQuery.textScalerOf(context);
     // 量宽必须**带上当时那一套字体**：`Text` 会从环境继承 family（工装里中英双字体
     // 就是这么挂上去的），而裸的 `TextPainter` 只会用兜底字体 —— 两者的中文宽度
@@ -924,8 +804,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
         AppTokens.gapIconText * 4 +
         8.0 * 2 * 2 + // 两个 GlassPill 的内边距（各两侧 8）
         AppTokens.iconMd +
-        4 + // 「今天」胶囊里图标与文字之间的间距
-        _textWidth(L10n.today, styled(AppTokens.labelStrong), scaler) +
+        // 「今天」那两个字与它前面的间距：只留图标的那一档（[compactToday]）
+        // 连同这两个字一起去掉 —— 这是 §2 降级顺序里的「换短串」。
+        (compactToday
+            ? 0.0
+            : 4 + _textWidth(L10n.today, styled(AppTokens.labelStrong), scaler)) +
         _textWidth(L10n.yearMonth(_month), styled(AppTokens.titleStrong), scaler);
     return need <= MediaQuery.sizeOf(context).width;
   }
@@ -942,7 +825,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     // 就悄悄溢出了 —— 用户 2026-10-13 报的正是它（真我 GT7 Pro）。
     // 固定件全是量得出来的：三个圆形钮 + 四个间距 + 「今天」胶囊，年月那串用
     // `TextPainter` 量。**大 / 特大档下走两行是常态版式**，不是应急。
-    if (!_oneRowFits(context)) {
+    // 一行放不下时先试「今天」只留图标（省下那两个字与间距）：还能站住一行就不折行；
+    // 折行是最后一档（§2 的降级顺序「折行 > 按宽缩小 > 换短串」在这里反过来用 ——
+    // 这次是**先换短串、再折行**，因为折行要多占一整行高度）。
+    final fullRow = _oneRowFits(context);
+    final compactToday = !fullRow && _oneRowFits(context, compactToday: true);
+    if (!fullRow && !compactToday) {
       const narrowSide = 32.0;
       const narrowGap = 4.0;
       return Padding(
@@ -1062,7 +950,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   color: Colors.white,
                 ),
                 // 320 宽下「今天」两个字会挤掉年月的显示宽度，窄屏只留图标。
-                if (!AppLayout.of(context).isNarrow) ...[
+                // 320 宽下「今天」两个字会挤掉年月的显示宽度，窄屏只留图标。
+                if (!compactToday && !AppLayout.of(context).isNarrow) ...[
                   const SizedBox(width: 4),
                   Text(
                     L10n.today,
@@ -2046,160 +1935,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     return '$fs-$fe→$ls-$le';
   }
 
-  /// 日历格子里的班次胶囊。
-  ///
-  /// 配方与信息卡的「其他班组」色块、「法定节假日」徽章**同一套**：班次色淡染底
-  /// + 同色描边 + [AppTokens.inkFor] 文字。同一个「信息胶囊」在应用里只该有一套
-  /// 长相，不因为进了日历就换配方。
-  ///
-  /// [solid] 为真时底色换成班次色实心、文字走 [AppTokens.onSolid]，用于滑块当前
-  /// 吸附的那一格 —— 那一格是全屏唯一需要「一眼锁定」的。**只换颜色，不换几何**
-  /// （描边宽度、内边距、字号一律不动），所以胶囊尺寸与内容高度不随选中态变化，
-  /// 不会连带触发布局跳动。
-  ///
-  /// 底色走 [AnimatedContainer]，选中/取消时渐变过去而不是硬切；文字色是跳变的
-  /// —— 两个候选（`inkFor` 与 `onSolid`）各自在对应底色上可读，中间态可接受，
-  /// 而 Color.lerp 两个可读色反而会穿过不可读区。
-  /// 日历格子内的**时段胶囊**（多胶囊堆叠的每一颗）。
-  ///
-  /// 「今天」徽章：实心主色 + 白字。
-  ///
-  /// 完整信息卡与小窗那张精简卡**共用** —— 两处各写一份的话，迟早长成两个样。
-  Widget _todayBadge(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.spaceSm, vertical: AppTokens.padChipV),
-        decoration: BoxDecoration(
-          // 实心主色 + 白字。原来是「主色 14% 淡底 + 主色字」，
-          // 实测对比度 3.84:1（深色下 2.93:1），低于 AA 的 4.5:1。
-          color: Theme.of(context).colorScheme.primary,
-          borderRadius: BorderRadius.circular(AppTokens.radiusL),
-        ),
-        child: Text(
-          L10n.today,
-          style: AppTokens.microStrong.copyWith(color: Colors.white),
-        ),
-      );
-
-  /// 「已调班」徽章：这天被单独调动过。
-  ///
-  /// 形状抄同一行的邻居 —— **「N 项待办」徽章那套配方**（14% 淡染底 + 45% 同色
-  /// 描边 + `radiusL` + `inkFor` 文字，见 `_todoHintBadge`），只是不带图标。
-  /// 原来这里是一句**裸 `Text`**，而同一行另外两个徽章（「今天」「N 项待办」）
-  /// 都是胶囊 —— 三种形状并排看着就散。
-  ///
-  /// 完整卡与小窗的精简卡**共用**。小窗那张尤其需要它：那里格子窄到画不出胶囊、
-  /// 圆点根本不会出现，信息卡是唯一还能承载这个标记的地方。
-  ///
-  /// 胶囊比裸文字高，所以它在**完整卡**里的高度必须进定高模型：见
-  /// `info_card_metrics.dart` 的 `_adjustedBadgeH` 与 `hasOverrideHint`。
-  Widget _adjustedBadge(BuildContext context, Color primary) => Container(
-        key: const Key('info-card-adjusted'),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.spaceSm, vertical: AppTokens.padChipV),
-        decoration: BoxDecoration(
-          color: primary.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(AppTokens.radiusL),
-          border: Border.all(color: primary.withValues(alpha: 0.45)),
-        ),
-        child: Text(
-          L10n.adjusted,
-          style: AppTokens.microStrong.copyWith(
-              color: AppTokens.inkFor(
-                  primary,
-                  Color.alphaBlend(primary.withValues(alpha: 0.14),
-                      Theme.of(context).colorScheme.surface))),
-        ),
-      );
-
-  /// 信息卡日期行上的「N 项待办」提示。
-  ///
-  /// 形状与同一行的「今天」徽章对齐（同内边距、同圆角），颜色走「信息胶囊」那套
-  /// 淡染配方（14% 底 + 45% 描边 + `inkFor` 文字）—— 同一行两个徽章等高等形，
-  /// 只有轻重不同。高度与「今天」徽章一样是 12px 文字那一档，所以日期行的高度
-  /// 不因它而变。
-  Widget _todoHintBadge(BuildContext context, int count) {
-    final accent = Theme.of(context).colorScheme.primary;
-    final ink = AppTokens.inkFor(
-        accent,
-        Color.alphaBlend(accent.withValues(alpha: 0.14),
-            Theme.of(context).colorScheme.surface));
-    return Container(
-      key: const Key('info-card-todo-hint'),
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.spaceSm, vertical: AppTokens.padChipV),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppTokens.radiusL),
-        border: Border.all(color: accent.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(Icons.event_note_outlined,
-              size: AppTokens.iconSm, color: ink),
-          const SizedBox(width: AppTokens.gapIconText),
-          Text(L10n.todoCount(count),
-              style: AppTokens.microStrong.copyWith(color: ink)),
-        ],
-      ),
-    );
-  }
-
-  /// 信息卡上的「法定节假日 + 节日名」红色胶囊。
-  ///
-  /// **配方与「其他班组」色块同一套**（14% 淡染底 / 45% 描边 / `radiusS` /
-  /// 文字走 [AppTokens.inkFor]）—— 两者是同一类「信息胶囊」，没理由两套。
-  /// 这里原来单独一套（12% / 35% / `radiusL` / 原色字），原色红压在同色淡底
-  /// 上只有 3.46:1（浅色）/ 3.37:1（深色），两套主题都够不到 AA 的 4.5:1；
-  /// 调度色块那条路径正是为此才走 `inkFor`。
-  ///
-  /// 图标 + 「法定节假日」+ 节日名**一行**放下：徽章自占一行，宽度不再是稀缺
-  /// 资源，不必再拆成上下两行、也不必把标签缩到 9px。大小与字重（12/w600 对
-  /// 14/w700）留给主次关系。
-  Widget _holidayBadge(BuildContext context, String name) {
-    final surface = Theme.of(context).colorScheme.surface;
-    final ink = AppTokens.inkFor(
-        AppTokens.holiday,
-        Color.alphaBlend(
-            AppTokens.holiday.withValues(alpha: 0.14), surface));
-    return Container(
-      key: const Key('info-card-holiday-badge'),
-      padding: const EdgeInsets.symmetric(
-          horizontal: 8, vertical: AppTokens.padChipV),
-      decoration: BoxDecoration(
-        color: AppTokens.holiday.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppTokens.radiusS),
-        border: Border.all(color: AppTokens.holiday.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(Icons.celebration_outlined, size: AppTokens.iconSm, color: ink),
-          const SizedBox(width: AppTokens.gapIconText),
-          Flexible(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: L10n.legalHoliday,
-                    style: AppTokens.microLabel.copyWith(color: ink),
-                  ),
-                  const TextSpan(text: '  '),
-                  TextSpan(
-                    text: name,
-                    style: AppTokens.labelStrong.copyWith(color: ink),
-                  ),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   BoxDecoration _cardDecoration(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
@@ -2337,547 +2072,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     );
   }
 
-  /// 底部玻璃信息卡（完整分行）。
-  Widget _infoCard(BuildContext context, ScheduleChain? chain,
-      {bool inSidePane = false, bool compact = false}) {
-    final lunar = lunarOf(_selected);
-    // 这一屏讲的是**选中那天**，所以取那天所属的方案；下面「班次行 / 已调班 /
-    // 空白表 / 其他班组」四处全用它。跨时段之后**不能再认「当前方案」** ——
-    // 「今天归哪套」是链才知道的事。
-    final daySchedule = chain?.scheduleOn(_selected);
-    // 真值：空白表（跟随法定节假日）**没有班次定义**，这里就是 null —— 于是
-    // 信息卡、小窗精简卡都不替它写「上班」。
-    //
-    // 别退回「给空白表合成一个班次」那一版（v0.9.15 试过）：那是拿显示去迁就判据。
-    // 「有没有班表在管」是**另一件事**，由 `chain.hasScheduleOn` 回答（只有
-    // 「整月没有任何班表」时才写「这段时间没有排班」）。
-    final shiftList = chain?.shiftOn(_selected) ?? const [];
-    final shift = shiftList.firstOrNull;
-    final isToday = _selected == dateOnly(DateTime.now());
-    final muted = AppTokens.inkMuted(context);
-    final accent = shift != null
-        ? Color(shift.color)
-        : Theme.of(context).colorScheme.primary;
-    // 「信息胶囊」那套配方一律走主色（「今天」「N 项待办」「已调整」同一族），
-    // 与上面的 `accent`（跟着当天班次色走）不是一回事。
-    final primary = Theme.of(context).colorScheme.primary;
-
-    // 短屏（手机横屏 / 小窗）走单行紧凑版：360×360 这类窗口里网格才是主角，
-    // 完整信息卡（约 340 高）会把网格挤到只剩一条缝。这里保留
-    // 「哪天 · 什么班 · 几点到几点」，带上闹钟图标；农历、今天徽章与其他
-    // 班组收起来 —— 网格上本来就直接画着班次与农历，信息没有丢。
-    if (compact) {
-      final timeText =
-          (shift != null && shift.startMinute != null && shift.endMinute != null)
-              ? _timeRange(shift)
-              : null;
-      final isAdjusted =
-          daySchedule?.dayOverrides.containsKey(dayNumber(_selected)) ?? false;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 76),
-        // 与完整信息卡那行班次**同一条规则**：`GlassPressable` 承载按压缩放
-        // （它自己没 `onTap`），点击由 `GestureDetector` 拿 —— 这条玻璃卡套
-        // `InkWell` 会凭空多一圈水波纹，最扎眼（完整卡那段说明了同一条；spec §7）。
-        child: GlassPressable(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: (daySchedule == null || daySchedule.classes.isEmpty)
-                ? null
-                : () => adjustDays(_selected, _selected),
-            child: GlassTile(
-              padding: const EdgeInsets.fromLTRB(AppTokens.spaceLg,
-                  AppTokens.spaceMd, AppTokens.spaceMd, AppTokens.spaceMd),
-              // 小窗这一档**同时**意味着「不画网格」（见 build 里那条 `isShort`），
-              // 所以这张卡就是屏幕上唯一的内容 —— 它得把该说的都说清楚，而不是
-              // 像从前那样只挤一行「日期 · 班次 · 时间」。
-              //
-              // **「已调班」徽章必须在这里。** 小窗下格子里那个圆点根本画不出来
-              // （格子窄到画不出胶囊），信息卡是唯一还能承载标记的地方；不给它，
-              // 小窗里被调过的日子在界面上就完全没有痕迹了。
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 4,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: accent,
-                          borderRadius:
-                              BorderRadius.circular(AppTokens.radiusS),
-                        ),
-                      ),
-                      const SizedBox(width: AppTokens.gapIconTextLg),
-                      Flexible(
-                        child: Text(
-                          // 200dp 宽下带星期那份（「9月18日 星期五」）会被截成
-                          // 「9月18…」，读不出日期；今天与否由旁边的徽章说。
-                          // 完整卡仍然带星期。
-                          L10n.monthDay(_selected),
-                          // 折两行、不省略（v0.11.12 的规矩）：这一行旁边还有
-                          // 今天徽章与「已调班」徽章，窄窗 + 大字号下一个月日
-                          // 都可能放不下 —— 高度这里有的是。
-                          maxLines: 2,
-                          style: AppTokens.sectionTitle,
-                        ),
-                      ),
-                      if (isToday) ...[
-                        const SizedBox(width: AppTokens.spaceSm),
-                        _todayBadge(context),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: AppTokens.spaceSm),
-                  Text(
-                    // 用格子用的那个短农历（「初八」），不用 `fullDescription`
-                    // —— 后者在 200dp 宽下要三行、截出来是「九…」这种半截字。
-                    // 窄窗里要的是「哪天、什么班、调没调过」，农历是点缀。
-                    lunar.shortLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTokens.rowSecondary.copyWith(
-                      color: lunar.isLegalHoliday ? AppTokens.holiday : muted,
-                    ),
-                  ),
-                  if (shift != null) ...[
-                    const SizedBox(height: AppTokens.spaceSm),
-                    Row(
-                      // 顶上对齐：左边色点、右边「名 + 徽章」一行、时间再一行。
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(top: AppTokens.padChipV),
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                                color: Color(shift.color),
-                                shape: BoxShape.circle),
-                          ),
-                        ),
-                        const SizedBox(width: AppTokens.gapIconText),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      shift.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTokens.rowPrimary,
-                                    ),
-                                  ),
-                                  if (isAdjusted) ...[
-                                    const SizedBox(
-                                        width: AppTokens.gapIconText),
-                                    _adjustedBadge(context, accent),
-                                  ],
-                                ],
-                              ),
-                              // 时间另起一行而不是与班次名挤同一行：200dp 宽下
-                              // 挤一起的结果是「白班 0…」—— 时间全被截掉。
-                              if (timeText != null) ...[
-                                const SizedBox(height: AppTokens.gapHair),
-                                Text(
-                                  timeText,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTokens.labelSecondary,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 选中那天还没完成的待办条数。只说数量，不列内容（用户要的只是「今天有
-    // 待办」这一眼）。口径抽在 `isPendingTodoOn`（`app_repository.dart`）里 ——
-    // 桌面小组件快照的今日待办数与这里必须是同一个判定。
-    final pendingTodos = ref
-            .watch(eventsProvider)
-            .valueOrNull
-            ?.where((e) => isPendingTodoOn(e, _selected))
-            .length ??
-        0;
-
-    // 卡片内容。做成**闭包**而不是直接赋值：最后那行「本月统计」画不画，要等
-    // `LayoutBuilder` 量出卡片宽度、拿到当天的富余才知道（见 `_tallyFits`），而闭包
-    // 顺手把上面这些派生值都捕获了，不必为此抽一层参数长长的私有方法。
-    Widget buildContent(String? tally) => Column(
-      key: const Key('info-card-content'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            // **必须能收窄。** 这一行是「日期 + 今天徽章 + 待办徽章」三个并排，
-            // 而日期这一串（「9月29日 星期二」）没有弹性 —— 系统字号一放大
-            // （1.8× 实测）它就顶穿卡片右边缘 76px，把「N 项待办」徽章整个挤出去。
-            //
-            // 用 `FittedBox(scaleDown)` 而不是 `Flexible + ellipsis`：这一行里
-            // 日期与两个徽章都要紧（徽章分别说「今天」和「有几件待办」），
-            // 谁也丢不得。放不下时**缩日期**、三个元素全留着；放得下时它一像素
-            // 都不动（`scaleDown` 只缩不放）。
-            //
-            // 高度方向也因此是安全的：`info_card_metrics.dart` 是**按缩放大小的
-            // 字号**量这一行的，这里缩完只会更矮，不会把定高撑破。
-            //
-            // 与紧凑卡那一支（`Flexible` + 省略号）有意不同：那一支窄到 200dp，
-            // 缩到那个宽度日期就没法看了，宁可直接省略（那边另有说明）。
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  L10n.monthDayWeekday(_selected),
-                  // 设计规格把字重收成「标题 w700 / 强调 w600 / 正文 w500」，
-                  // w800 只留给响铃大时钟与角标「今天」，所以日期行走 w700 的
-                  // sectionTitle。
-                  style: AppTokens.sectionTitle,
-                ),
-              ),
-            ),
-            if (isToday) ...[
-              const SizedBox(width: 8),
-              _todayBadge(context),
-            ],
-            // 待办提示塞在**这一行**里，不新占一行：这一行本来就有个和它一样高的
-            // 「今天」徽章，所以卡片高度（进而格子高度）一像素都不动 —— 信息卡是
-            // 定高的，多一行会让六个格子集体矮一截（见 `info_card_metrics.dart`）。
-            //
-            // 窄屏不显示：三个元素并排在这点宽度里放不下，而挤掉日期的字比少一条
-            // 提示更糟（紧凑卡片分支同样把农历、今天徽章都收起来了）。
-            //
-            // 侧栏（横屏的左右分栏）同样不显示 —— 那一栏比竖屏底栏还窄，
-            // 实测这一行会横向溢出 24px。
-            if (pendingTodos > 0 &&
-                !inSidePane &&
-                !AppLayout.of(context).isNarrow) ...[
-              const SizedBox(width: AppTokens.spaceSm),
-              _todoHintBadge(context, pendingTodos),
-            ],
-          ],
-        ),
-        const SizedBox(height: AppTokens.spaceSm),
-        // 节假日徽章自占一行、农历独占下一行。
-        //
-        // 这两条曾经并排过，理由是「徽章自占一行的话，放假那天卡片凭空高 24，
-        // 上面六个格子就集体矮一截」。但卡片 v0.6.6 起是**定高**的，多出来的
-        // 内容由定高吸收、网格不再跟着抖 —— 那条理由已经不成立。代价却是实打
-        // 实的：徽章连图标带「法定节假日 · 」有一百多 dp 宽，把农历挤到右边只
-        // 剩一半宽度，两行都显示不全（v0.6.7 用户实测）。
-        if (lunar.isLegalHoliday) ...[
-          _holidayBadge(context, lunar.legalHolidayName),
-          // 徽章是给下面这行农历作注解的，贴紧一点成一组。
-          const SizedBox(height: AppTokens.spaceXs),
-        ],
-        Text(
-          lunar.fullDescription,
-          // 三行封顶（v0.11.12 从 2 提上来）：宽屏一行就够，窄屏 + 大字号下
-          // 两行装不完最长的那些农历串 —— 而**不许省略**（设计 §6.2）。
-          maxLines: 3,
-          style: AppTokens.rowSecondary.copyWith(
-            color: lunar.isLegalHoliday ? AppTokens.holiday : muted,
-          ),
-        ),
-        // 段与段之间一律用栅格上的 12（原来这里是 10，不在 4px 栅格上）。
-        const SizedBox(height: AppTokens.spaceMd),
-        // 班次名、时间、闹钟**同一行**。分开写要两行（一行文字 + 它的间距，
-        // 约 26dp），而卡片内部可用高度只有 210dp —— 六班组那种排满的日子
-        // 本来就已经被底边裁掉一截（v0.6.7 实测 224dp）。
-        //
-        // 三段并成一段富文本，是为了让省略号落对地方：各自 Flexible 的话，
-        // 剩余宽度会被三等分，最长的时间串（「20:30 – 次日08:30」）反而先
-        // 被截掉。并成一段后按「班次名 → 时间 → 闹钟」的顺序从尾部省略，
-        // 优先级正好反过来。
-        // `shift` 是真值：空白表（跟随法定节假日）这天是 null，走下面「有班表、
-        // 但没班次」那一支（什么都不写）。
-        if (shift != null && daySchedule != null)
-          // `GlassPressable` **没有 `onTap`** —— 它只是个按压缩放的视觉包装
-          // （`Listener` + `QScale`），点击一律由子 widget 承载。这里用
-          // `GestureDetector` 只拿点击：全 app 的按压反馈就是玻璃的 Q 弹缩放，
-          // 水波纹只该出现在弹层的 `ListTile` 里（那里 `GlassPressable` 垫的
-          // `Material` 让波纹浮在玻璃之上，是有意的）；这张玻璃卡套 `InkWell`
-          // 会凭空多出一圈水波纹，最扎眼（spec §7.2）。
-          //
-          // `opaque`：行内元素之间有空隙（圆点、间距、`Expanded` 文字），不加这个
-          // 点在空隙上不响应。
-          //
-          // 空白表方案没有班次定义可挑，入口不给（spec §7.3）—— 传 null 禁用它。
-          // 已知小瑕疵：`GlassPressable` 的按压缩放挡不住，空白表下按这行仍会
-          // 缩一下。不值得为它再加一层条件包装。
-          GlassPressable(
-            key: const Key('info-card-shift-entry'),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: daySchedule.classes.isEmpty
-                  ? null
-                  : () => adjustDays(_selected, _selected),
-              child: Row(
-                children: [
-                  Container(
-                    // 保持原来的 12 不动 —— 这个色点的尺寸不是本任务要改的东西，
-                    // 换成 `AppTokens.iconSm`（16）会白白把点撑大一圈。
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                        color: Color(shift.color), shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    // 班次名 + 时间 + 闹钟是**一段**富文本，折行会把「闹钟」那段
-                    // 甩到第二行、把定高模型的账算歪（见 `info_card_metrics.dart`
-                    // 里按 1 行量那一处）。所以这里走设计 §2 的第 2 档：**缩，不省略**。
-                    //
-                    // ⚠️ **外面那层 `SizedBox` 不能省**：`FittedBox` 的高度会跟着
-                    // 缩放比例一起缩 —— 于是「三条闹钟」那天的这一行反而比「一条」
-                    // 那天矮 3dp，卡片内容高度跟着变，`calendar_screen_test.dart`
-                    // 那条「多条闹钟不该把卡片顶高」当场就红。高度按**一行的自然
-                    // 行高**钉死（与 `info_card_metrics` 量的是同一个数）。
-                    child: SizedBox(
-                      height: _oneLineHeight(context, AppTokens.titleStrong),
-                      child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text.rich(
-                      key: const Key('info-card-shift-line'),
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: shift.name,
-                            style: AppTokens.titleStrong.copyWith(
-                              color: AppTokens.inkFor(Color(shift.color),
-                                  Theme.of(context).colorScheme.surface),
-                            ),
-                          ),
-                          if (shift.startMinute != null &&
-                              shift.endMinute != null)
-                            TextSpan(
-                              text: '  ${_timeRange(shift)}',
-                              style: AppTokens.rowPrimary,
-                            ),
-                          TextSpan(
-                            text: '   ${alarmNote(shift)}',
-                            style:
-                                AppTokens.rowSecondary.copyWith(color: muted),
-                          ),
-                        ],
-                      ),
-                      maxLines: 1,
-                    ))),
-                  ),
-                  // 这天被单独调动过：形状抄同一行的邻居，理由见 `_adjustedBadge`。
-                  // （外层 `if (shift != null && daySchedule != null)` 已经把它收窄了。）
-                  if (daySchedule.dayOverrides.containsKey(dayNumber(_selected)))
-                    Padding(
-                      padding: const EdgeInsets.only(left: AppTokens.spaceSm),
-                      child: _adjustedBadge(context, primary),
-                    ),
-                ],
-              ),
-            ),
-          )
-        // 判据是「**这天有没有班表在管**」，不是「这天有没有班次」：
-        //   · 「其余时间」是「无」、又没有段覆盖 → 真的没有排班，写那句说明；
-        //   · 有班表在管、只是那天没有班次定义（空白表 = 跟随法定节假日）
-        //     → **什么都不写**。那套班表的语义就是「当日历看」：日期、农历、
-        //       法定节假日标红都在，不替它断言今天上不上班（v0.9.16 用户反馈）。
-        // 写成 `shift == null` 会把第二种误判成第一种 —— 那正是 v0.9.14 用户报的
-        // 「一直弹窗提示这段时间没有排班，可我们是按法定节假日上班的」。
-        else if (daySchedule == null)
-          Text(L10n.noSchedule,
-              style: AppTokens.rowSecondary.copyWith(color: muted)),
-        if (daySchedule != null && daySchedule.teamCount > 1) ...[
-          const SizedBox(height: AppTokens.spaceMd),
-          // 标签与色块同一行：标签独占一行要白占 12 + 16 + 6 = 34dp，而
-          // 6 个班组要**两行**色块 —— 那两行必须留得住，否则最后一行会被
-          // 卡片底边裁掉（正是 v0.6.7 实测到的问题）。标签还在、还在左边，
-          // 只是不再独占一行。
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                // 4 与色块文字的实际起点（padChipV 3 + 描边 1）对齐。
-                padding: const EdgeInsets.only(top: AppTokens.spaceXs),
-                child: Text(L10n.otherCrews,
-                    style: AppTokens.microText.copyWith(color: muted)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Wrap(
-                  spacing: AppTokens.spaceSm,
-                  runSpacing: AppTokens.gapIconText,
-                  children: _otherCrewChips(daySchedule, _selected),
-                ),
-              ),
-            ],
-          ),
-        ],
-        // 「本月 早12 · 午8 · 夜8 · 休6」—— 只在**这天还有富余**时才画。
-        //
-        // 卡片高度是按月定死的（`info_card_metrics.dart`）：最满的那天（通常是有
-        // 法定节假日、农历又占两行的日子）正好占满，普通日子则空出 32~51dp。与其
-        // 把高度改小 —— 那会把上面的网格带得一起抖，用户明确不要 —— 不如把这截富余
-        // 用起来：够就画这一行，不够（比如节假日那天）就不画，**绝不为它动卡片高度**。
-        // 判定见 `_tallyFits`，差一两个 dp 也算得出来。
-        if (tally != null) ...[
-          const SizedBox(height: AppTokens.spaceSm),
-          Text(
-            tally,
-            key: const Key('info-card-month-tally'),
-            // 班次多、简称长的排班会折到第二行；折行的高度已由 `_tallyFits` 计入。
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppTokens.microText.copyWith(color: muted),
-          ),
-        ],
-      ],
-    );
-
-    final padding = inSidePane
-        ? const EdgeInsets.fromLTRB(0, 8, 16, 16)
-        // 底栏时要给悬浮胶囊让出高度（竖屏 96，短屏 76）；右栏时胶囊在
-        // 屏幕底部、与这一栏无关，只需要常规留白。竖屏的 96 = 胶囊高 64
-        // + 32 余量：84 时卡片底边几乎贴在胶囊上（v0.6.7 用户实测），
-        // 又放开了 12。
-        : const EdgeInsets.fromLTRB(16, 8, 16, 96);
-
-    // 卡片外框宽度要量出来才能算高度（内容区宽度决定农历与色块折几行），
-    // 而宽度只有这里才知道 —— 所以在内边距**里面**再套一层 LayoutBuilder。
-    //
-    // 内容也在这里面才建出来：那行「本月统计」画不画，取决于「卡片内高 − 当天内容
-    // 高度」这截富余（`infoCardTallyFits`），而富余也要先知道卡片宽度。`buildContent`
-    // 是闭包，所以搬进来不必给内容补一长串参数。
-    return Padding(
-      padding: padding,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final metrics = inSidePane
-              ? null
-              : _cardMetricsFor(context, chain, constraints.maxWidth);
-          final String? tally = _factsFor(chain).tally;
-          final showTally = tally != null &&
-              infoCardTallyFits(
-                context: context,
-                metrics: metrics,
-                tally: tally,
-                cardOuterWidth: constraints.maxWidth,
-                dayOfMonth: _selected.day,
-              );
-
-          final content = buildContent(showTally ? tally : null);
-
-          // 底栏时面板必须**撑满**那个定高盒子。`Stack` 默认 `StackFit.loose`，
-          // 只给非定位子节点松约束，面板于是缩到内容高度；而左侧色条是
-          // `Positioned(top/bottom: spaceLg)`，量的却是外面那个定高盒子 —— 两边
-          // 各按各的高度走，色条就比卡片长出几十 dp、垂在空白里（v0.6.6 用户
-          // 实测：卡片 126 高，色条 212 高）。给面板一层定高，两者才对得上。
-          //
-          // 右栏那份反过来要贴内容高度：那边没有「撑满」的必要，也就没有空档，
-          // 所以不套这层（`metrics` 为 null → 高度交给内容），色条跟着面板走本来就是对的。
-          final panel = GlassTile(
-            key: const Key('info-card-panel'),
-            padding: const EdgeInsets.fromLTRB(AppTokens.spaceXl,
-                AppTokens.spaceLg, AppTokens.spaceLg, AppTokens.spaceLg),
-            child: inSidePane
-                ? content
-                // 兜底：字号被系统放大到装不下时，卡片内部滚动，而不是溢出成
-                // 黄黑条纹。正常字号下内容矮于卡片，这一层不产生任何滚动。
-                : SingleChildScrollView(child: content),
-          );
-
-          return Stack(
-            children: [
-              SizedBox(
-                key: const Key('info-card-box'),
-                height: metrics?.outerHeight,
-                child: panel,
-              ),
-              Positioned(
-                left: 0,
-                // 上下与面板内边距（spaceLg）一致，色条才是「卡片内高」而不是靠边。
-                top: AppTokens.spaceLg,
-                bottom: AppTokens.spaceLg,
-                width: 6,
-                child: DecoratedBox(
-                  key: const Key('info-card-accent-bar'),
-                  decoration: BoxDecoration(
-                    color: accent,
-                    // 6dp 宽的细长条就是胶囊：圆角取高度的一半。
-                    borderRadius: AppTokens.pillOf(6),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-
-  /// 其他班组当天班次：色点 + 组名 + 简称，横向换行，6 个班组也放得下。
-  List<Widget> _otherCrewChips(ShiftSchedule schedule, DateTime date) {
-    final chips = <Widget>[];
-    for (var i = 0; i < schedule.teamCount; i++) {
-      if (i == schedule.ourTeamIndex) continue;
-      final tList = schedule.teamShift(i, date);
-      final t = tList.firstOrNull;
-      if (t == null) continue;
-      final name = i < schedule.teamNames.length
-          ? schedule.teamNames[i]
-          : (L10n.isEn ? 'Team ${i + 1}' : '${i + 1}班');
-      chips.add(Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 8, vertical: AppTokens.padChipV),
-        decoration: BoxDecoration(
-          color: Color(t.color).withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(AppTokens.radiusS),
-          border: Border.all(color: Color(t.color).withValues(alpha: 0.45)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration:
-                  BoxDecoration(color: Color(t.color), shape: BoxShape.circle),
-            ),
-            const SizedBox(width: AppTokens.gapIconText),
-            Text('$name ${t.shortLabel}',
-                style: AppTokens.microLabel.copyWith(
-                    // 色块底是班次色 14% 的淡染，字要按它算可读版本。
-                    color: AppTokens.inkFor(
-                        Color(t.color),
-                        Color.alphaBlend(
-                            Color(t.color).withValues(alpha: 0.14),
-                            Theme.of(context).colorScheme.surface)))),
-          ],
-        ),
-      ));
-    }
-    return chips;
-  }
-}
-
-String _timeRange(ShiftClass t) {
-  var e = t.endMinute!;
-  final nextDay = e > 1440 || e < t.startMinute!;
-  if (e > 1440) e -= 1440;
-  return L10n.timeRange(formatClock(t.startMinute!), formatClock(e), nextDay);
 }
 
 /// 格子角上那个小圆点（右上 = 这天调过班，左上 = 这个班挂了闹钟）。

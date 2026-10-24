@@ -208,6 +208,6 @@ void main() {
     final blank = await AppRepository(db).getScheduleDomain(2);
     expect(blank, isNotNull);
     expect(blank!.isBlank, isTrue);
-    expect(blank.shiftOn(_anchor), isNull);
+    expect(blank.shiftOn(_anchor), isEmpty);
   });
 }

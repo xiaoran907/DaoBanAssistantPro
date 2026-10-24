@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/core/l10n.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
 import 'package:shiftassistantpro/domain/recurring_todo.dart';
@@ -68,6 +69,7 @@ void main() {
   setUp(() async {
     L10n.locale = 'zh';
     _stubPluginChannels();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     final raw = sqlite3.sqlite3.openInMemory();
     db = AppDatabase.forTesting(NativeDatabase.opened(raw));
     repo = AppRepository(db);

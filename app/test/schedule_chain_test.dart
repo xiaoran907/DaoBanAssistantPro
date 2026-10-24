@@ -106,7 +106,7 @@ void main() {
       expect(chain.scheduleOn(_d(2026, 9, 30))!.name, 'A'); // 闭区间
       expect(chain.scheduleOn(_d(2026, 10, 1)), isNull);
       expect(chain.scheduleOn(_d(2026, 8, 31)), isNull);
-      expect(chain.shiftOn(_d(2026, 10, 1)), isNull);
+      expect(chain.shiftOn(_d(2026, 10, 1)), isEmpty);
     });
 
     test('其余时间为 null 且没有任何段 → 哪天都是 null，且 hasCycle 为假', () {
@@ -207,7 +207,7 @@ void main() {
         cycle: const [],
       );
       final chain = ScheduleChain(fallback: blank, fallbackId: 1);
-      expect(chain.shiftOn(_d(2026, 9, 18)), isNull, reason: '空白表没有班次');
+      expect(chain.shiftOn(_d(2026, 9, 18)), isEmpty, reason: '空白表没有班次');
       expect(chain.hasScheduleOn(_d(2026, 9, 18)), isTrue,
           reason: '但这天有班表在管 —— 日历据此不盖那句指路');
       expect(chain.hasCycle, isFalse, reason: '没有班次可挑');

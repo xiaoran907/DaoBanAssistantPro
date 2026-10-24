@@ -24,7 +24,7 @@ void main() {
   });
 
   test('JSON 序列化与反序列化往返一致', () {
-    final config = NavTabConfig(
+    const config = NavTabConfig(
       enabled: {NavTabId.calendar, NavTabId.todo, NavTabId.profile},
       order: [NavTabId.profile, NavTabId.calendar, NavTabId.alarm,
           NavTabId.todo, NavTabId.salary],
@@ -65,7 +65,7 @@ void main() {
   });
 
   test('不能关掉最后一个 tab', () {
-    final config = NavTabConfig(
+    const config = NavTabConfig(
       enabled: {NavTabId.calendar},
       order: [NavTabId.calendar, NavTabId.alarm, NavTabId.todo,
           NavTabId.salary, NavTabId.profile],
@@ -122,7 +122,7 @@ void main() {
   });
 
   test('toJson 输出可被 fromJson 正确解析', () {
-    final config = const NavTabConfig(
+    const config = NavTabConfig(
       enabled: {NavTabId.calendar, NavTabId.profile},
       order: [NavTabId.profile, NavTabId.calendar, NavTabId.alarm,
           NavTabId.todo, NavTabId.salary],

@@ -103,8 +103,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
     }
     // 权限卡在页面**下半屏**，`ListView` 懒构建 —— 不滚下去它根本不在树上
-    // （工装那张 `07_profile_*_scrolled` 也是这么滚的）。
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+    // （工装那张 `07_profile_*_scrolled` 也是这么滚的）。页面长度随功能增减，
+    // 所以滚到看得见为止，而不是写一个固定的拖拽距离。
+    await tester.scrollUntilVisible(
+      find.text(L10n.permNotif),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 40));
     }

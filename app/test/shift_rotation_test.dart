@@ -300,7 +300,7 @@ void main() {
       }
     });
 
-    test('空白表方案忽略覆盖（无周期 → 仍是 null）', () {
+    test('空白表方案忽略覆盖（无周期 → 仍是空列表）', () {
       final blank = ShiftSchedule(
         name: '跟随法定节假日',
         anchorDate: DateTime.utc(2025, 1, 6),
@@ -308,7 +308,7 @@ void main() {
         cycle: const [],
         dayOverrides: {dayNumber(day): 0},
       );
-      expect(blank.shiftOn(day), isNull);
+      expect(blank.shiftOn(day), isEmpty);
     });
 
     test('ShiftClass 带 id 时按 id 区分身份', () {

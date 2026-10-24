@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/core/l10n.dart';
 import 'package:shiftassistantpro/core/layout.dart';
 import 'package:shiftassistantpro/core/widgets/glass_delete_button.dart';
@@ -56,6 +57,7 @@ void main() {
   setUp(() async {
     L10n.locale = 'zh';
     _stubPluginChannels();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     db = AppDatabase.forTesting(
         NativeDatabase.opened(sqlite3.sqlite3.openInMemory()));
     repo = AppRepository(db);

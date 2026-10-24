@@ -207,7 +207,11 @@ void main() {
 
     await _save(tester);
     expect(repo.saved!.monthly, isFalse);
-    expect(repo.saved!.cycle, [0, 1, 2]);
+    expect(repo.saved!.cycle, [
+      [0],
+      [1],
+      [2]
+    ]);
     // **段表原样带着** —— 切回来没有被清掉，下次切过去还在
     expect(repo.saved!.monthSegments.map((s) => s.startDay), [1, 11, 21]);
   });
@@ -464,7 +468,11 @@ void main() {
     expect(templates.single.monthly, isTrue);
     expect(templates.single.monthlySegments.map((s) => s.startDay), [1, 11, 21]);
     // 周期那一半**照旧带过去**（切换模式不丢数据，模板是整块快照）
-    expect(templates.single.cycle, [0, 1, 2]);
+    expect(templates.single.cycle, [
+      [0],
+      [1],
+      [2]
+    ]);
   });
 
   // ── 独立审查抓出来的两条 Important ───────────────────────────────────────

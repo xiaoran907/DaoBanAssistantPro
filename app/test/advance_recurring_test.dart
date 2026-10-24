@@ -9,6 +9,7 @@
 // 纯日期（全仓比「同一天」的既有约定）。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
 import 'package:shiftassistantpro/domain/recurring_todo.dart';
 import 'package:shiftassistantpro/domain/shift_rotation.dart';
@@ -23,6 +24,11 @@ final _nextWed = DateTime.utc(2026, 9, 30);
 final _twoWeeksOn = DateTime.utc(2026, 10, 7);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  // advanceRecurringTodos 读 navConfig（tab 开关）判待办 gate；仓库测试没有
+  // widget 树，得给 SharedPreferences 一份空 mock，否则 gate 在平台通道上炸。
+  SharedPreferences.setMockInitialValues(const {});
+
   late AppDatabase db;
   late AppRepository repo;
 

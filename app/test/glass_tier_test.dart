@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/core/app_info.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
 import 'package:shiftassistantpro/features/alarm/alarm_service.dart';
+import 'package:shiftassistantpro/features/home/glass_nav_bar.dart';
 import 'package:shiftassistantpro/features/home/home_shell.dart';
 import 'package:shiftassistantpro/state/app_settings.dart';
 import 'package:shiftassistantpro/core/design_tokens.dart';
@@ -328,12 +329,14 @@ void main() {
     return bytes;
   }
 
-  /// 从底栏 `.85` 处（第 3 格）按下要用的位置。
+  /// 从底栏 `.85` 处（末格）按下要用的位置。
   ///
-  /// ⚠️ **量的是胶囊（`nav-capsule`），不是整个 `glass-nav-bar`。** 从前两者是一回事
+  /// ⚠️ **量的是胶囊（`nav-capsule`），不是整个 `GlassNavBar`。** 从前两者是一回事
   /// （胶囊把整条底栏铺满），限宽 440 之后就不是了：900×420 上胶囊居中都只占中段，
   /// 拿底栏算出来的 0.85 会落在胶囊**外面** —— 手势够不到底栏，透镜压根不提起，
   /// 而那条用例报的是「矮屏下没凸出」，看着像几何问题。
+  ///
+  /// #5 起默认 5 个 tab，`.85` 落在末格 —— 用例要的就是「最右边那一格」。
   Offset lastTab(WidgetTester tester) {
     final Rect cap = tester.getRect(find.byKey(const Key('nav-capsule')));
     return Offset(cap.left + cap.width * 0.85, cap.center.dy);
@@ -345,7 +348,7 @@ void main() {
   /// 也有一枚 `LiquidLens`，`find.byType(LiquidLens)` 会撞上「Too many elements」。
   LiquidLens lensOf(WidgetTester tester) => tester.widget<LiquidLens>(
       find.descendant(
-          of: find.byKey(const Key('glass-nav-bar')),
+          of: find.byType(GlassNavBar),
           matching: find.byType(LiquidLens)));
 
   testWidgets('交互契约两档一致：按住期间页面不动、松手才提交', (tester) async {
@@ -377,7 +380,8 @@ void main() {
 
     expect(stdDuring, everyElement(0), reason: '按住期间页面就不该动');
     expect(liqDuring, stdDuring, reason: '两档按住期间的页面位置不一样');
-    expect(stdAfter, 3, reason: '松手要落在滑块最终所在的那一格');
+    // #5 起默认 5 个 tab，`.85` 落在末格（index 4）。
+    expect(stdAfter, 4, reason: '松手要落在滑块最终所在的那一格');
     expect(liqAfter, stdAfter, reason: '两档的提交终值不一样 —— 液态档换的应该只有视觉');
   });
 
@@ -392,7 +396,7 @@ void main() {
     // ⚠️ **必须限定在底栏里**：v0.10.15 起日历那一页也有一枚透镜，全页数会数到两枚。
     expect(
         find.descendant(
-            of: find.byKey(const Key('glass-nav-bar')),
+            of: find.byType(GlassNavBar),
             matching: find.byType(LiquidLens)),
         findsOneWidget);
     await disposeShell(tester);
@@ -405,8 +409,13 @@ void main() {
     // 照过**（它们只比较相对位移），所以必须有这一条直接量绝对位置的。
     await pumpShell(tester, liquid: true);
     final LiquidLens lens = lensOf(tester);
+    // #5 起默认 5 个 tab，格宽从 items 数推导。
+    final int slotCount = tester
+        .widget<GlassNavBar>(find.byType(GlassNavBar))
+        .items
+        .length;
     const double pad = AppTokens.gapIconText;
-    final double itemW = (lens.size.width - 2 * pad) / 4;
+    final double itemW = (lens.size.width - 2 * pad) / slotCount;
     expect(lens.shape.centerX, closeTo(pad + 0.5 * itemW, 1),
         reason: '透镜没坐在第 0 格的中心 —— 多半是「中心 / 左缘」两套量纲混了');
     await disposeShell(tester);
@@ -482,7 +491,7 @@ void main() {
   testWidgets('点按被取消（竖直滑走）：透镜落回，不许卡在提起状态', (tester) async {
     await pumpShell(tester, liquid: true);
     final double capsuleH = lensOf(tester).size.height;
-    final Rect nav = tester.getRect(find.byKey(const Key('glass-nav-bar')));
+    final Rect nav = tester.getRect(find.byType(GlassNavBar));
     final TestGesture g = await tester.startGesture(nav.center);
     // 600ms：先等 `kPressTimeout`（100ms）让 onTapDown 触发，再等
     // `lensHoldDelay`（110ms）让升程的闸门开，剩下才是升程真正爬起来的时间。
@@ -549,7 +558,7 @@ void main() {
     // **反向验证**：把轴改回 `topLeft → bottomRight`，这条立刻红（实测 251 vs 203）。
     const Size size = Size(420, 900);
     final GlobalKey key = await pumpShell(tester, liquid: true, size: size);
-    final Rect nav = tester.getRect(find.byKey(const Key('glass-nav-bar')));
+    final Rect nav = tester.getRect(find.byType(GlassNavBar));
     final List<int> px = await rasterize(tester, key);
     // 胶囊比 nav 那条边内缩 `_outerPad`（24）。取「最暗的那一个像素」当这条边的读数
     // —— 描边与边光都只有 1px 上下，钉死某一个 x 会被抗锯齿的相位差骗到。
@@ -608,11 +617,11 @@ void main() {
     await pumpShell(tester, liquid: false);
     bool pressed() => tester
         .widget<QScale>(find.descendant(
-            of: find.byKey(const Key('glass-nav-bar')),
+            of: find.byType(GlassNavBar),
             matching: find.byType(QScale)))
         .pressed;
 
-    final Rect nav = tester.getRect(find.byKey(const Key('glass-nav-bar')));
+    final Rect nav = tester.getRect(find.byType(GlassNavBar));
     final TestGesture g = await tester.startGesture(nav.center);
     for (int i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 30)); // 过 kPressTimeout
@@ -648,9 +657,15 @@ void main() {
     // `lensMaxStep`（16ms），喂 55ms 一帧整段动画会慢 3.4 倍 —— 第一版用的就是
     // 55ms，量出来「渐入要 440ms」，与真机完全不是一回事（那版动图也因此拍错了）。
     await pumpShell(tester, liquid: true);
-    final Rect nav = tester.getRect(find.byKey(const Key('glass-nav-bar')));
+    // 按在**第 0 格的中心**：按住吸附（followFinger）会让透镜滑到手指下方，取样点
+    // 离格心越远滑得越远 —— #5 起 5 个 tab，从前的 `.18` 离格心 0.22 格，滑行到
+    // 400ms 都没停，「还没动就亮着」量到的其实是那段滑行。
+    final Rect cap = tester.getRect(find.byKey(const Key('nav-capsule')));
+    final double itemW =
+        (cap.width - 2 * AppTokens.gapIconText) /
+            tester.widget<GlassNavBar>(find.byType(GlassNavBar)).items.length;
     final TestGesture g = await tester.startGesture(
-        Offset(nav.left + nav.width * 0.18, nav.center.dy));
+        Offset(cap.left + AppTokens.gapIconText + 0.5 * itemW, cap.center.dy));
     double m() => lensOf(tester).shape.motion;
 
     for (int i = 0; i < 25; i++) {
@@ -717,8 +732,8 @@ void main() {
     await disposeShell(tester);
   });
 
-  testWidgets('限宽之后点第 4 格仍然切到第 4 页', (tester) async {
-    // 限宽把 `LayoutBuilder` 算出的 `itemW` 改了（1232/4 → (440 − 内边距)/4）。
+  testWidgets('限宽之后点末格仍然切到末页', (tester) async {
+    // 限宽把 `LayoutBuilder` 算出的 `itemW` 改了（1232/N → (440 − 内边距)/N）。
     // 点按坐标必须仍然对得上 —— 判据照本文件既有的写法，读 `PageController.page`。
     await pumpShell(tester, liquid: false, size: const Size(1280, 800));
     final cap = tester.getRect(find.byKey(const Key('nav-capsule')));
@@ -727,8 +742,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
     }
     final c = tester.widget<PageView>(find.byType(PageView)).controller!;
-    expect(c.page!.round(), 3,
-        reason: '点了第 4 格却没切到第 4 页 —— 限宽之后坐标没跟着走');
+    // #5 起默认 5 个 tab，`.88` 落在末格（index 4）。
+    expect(c.page!.round(), 4,
+        reason: '点了末格却没切到末页 —— 限宽之后坐标没跟着走');
     await disposeShell(tester);
   });
 }

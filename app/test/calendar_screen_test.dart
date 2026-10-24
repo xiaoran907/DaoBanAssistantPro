@@ -22,18 +22,13 @@ import 'package:shiftassistantpro/core/glass/liquid_lens.dart';
 import 'package:shiftassistantpro/core/l10n.dart';
 import 'package:shiftassistantpro/core/layout.dart';
 import 'package:shiftassistantpro/core/theme/animated_background.dart';
-import 'package:shiftassistantpro/core/widgets/glass_pressable.dart';
 import 'package:shiftassistantpro/core/widgets/glass_sheet_header.dart';
 import 'package:shiftassistantpro/data/app_repository.dart';
-import 'package:shiftassistantpro/state/app_settings.dart';
-import 'package:shiftassistantpro/domain/lunar_info.dart';
-import 'package:shiftassistantpro/domain/schedule_chain.dart';
 import 'package:shiftassistantpro/domain/shift_rotation.dart';
 import 'package:shiftassistantpro/domain/shift_templates.dart';
 import 'package:shiftassistantpro/features/calendar/calendar_lens.dart';
 import 'package:shiftassistantpro/features/calendar/calendar_range_band.dart';
 import 'package:shiftassistantpro/features/calendar/calendar_screen.dart';
-import 'package:shiftassistantpro/features/calendar/info_card_metrics.dart';
 import 'package:shiftassistantpro/features/calendar/schedule_editor_screen.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -81,16 +76,6 @@ List<String> _chipTexts(WidgetTester tester) => tester
     .where(_chipPattern.hasMatch)
     .toList();
 
-/// 信息卡「班次名 · 时间 · 闹钟」那一行的纯文本。
-///
-/// 三段并成了一段富文本（为了让省略号从尾部、也就是最不重要的闹钟开始截），
-/// 所以整行内容要从 `textSpan` 上取，不能按独立 `Text` 去找。
-String _shiftLine(WidgetTester tester) => tester
-    .widget<Text>(find.byKey(const Key('info-card-shift-line')))
-    .textSpan!
-    .toPlainText();
-
-/// 造一套真库（内存）+ 一套当前排班，再渲染日历页。
 ///
 /// 落库方式照抄 `createScheduleFromTemplatePicker`：模板提供
 /// classes/cycle/班组数/偏移，班组名由创建路径按 teamCount 给满
@@ -204,71 +189,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('六班三倒（6 个班组）：其他班组渲染 5 个色块，不再拼成一整行',
-      (tester) async {
-    // 窄屏：6 个色块必须换行，而不是把卡片撑破。
-    await _pumpCalendar(tester, 'six_crew_three_shift');
-
-    expect(find.text(L10n.otherCrews), findsOneWidget);
-
-    // 我们是第 1 组 → 剩下 5 组各一个色块（休班的组也要列出）
-    final chips = _chipTexts(tester);
-    expect(chips, hasLength(5), reason: '6 个班组应当出 5 个色块');
-    expect(chips.toSet(), hasLength(5), reason: '每个班组一个色块');
-    // 一班是「我」，不该出现；五班/六班的名字由创建路径给满
-    expect(chips.map((c) => c.split(' ').first).toSet(),
-        {'二班', '三班', '四班', '五班', '六班'});
-
-    // 旧的「一整行文字」形状：`其他班组：组名·班次名　…` 已不复存在
-    expect(find.textContaining('${L10n.otherCrews}：'), findsNothing);
-
-    // 窄屏 + 换行布局：不应有 RenderFlex overflow
-    expect(tester.takeException(), isNull);
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('上 24 休 48：值班当天时间走 L10n，中文界面显示「次日」',
-      (tester) async {
-    await _pumpCalendar(tester, 'duty_24_48', width: 640);
-
-    expect(L10n.isEn, isFalse);
-    // 班次名、时间、闹钟并成了一段富文本（见 info-card-shift-line 的说明），
-    // 所以按整行的纯文本断言，而不是找独立的 Text。
-    expect(_shiftLine(tester), contains('08:00 – 次日08:00'));
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('上 24 休 48 英文界面：时间用 (next day) 且不露出中文',
-      (tester) async {
-    // 本用例靠「App 自己从设置里读出 en」来切语言，因此必须自己还原 ——
-    // L10n.locale 是全局静态量，泄漏到下个用例会让那边的 saveSchedule
-    // 存下英文班次名（模板的班次名按当前语言生成），进而把信息卡挤溢出。
-    final prevLocale = L10n.locale;
-    addTearDown(() => L10n.locale = prevLocale);
-
-    SharedPreferences.setMockInitialValues({'language': 'en'});
-    await _pumpCalendar(tester, 'duty_24_48', width: 640);
-
-    expect(L10n.isEn, isTrue, reason: '语言应当已从设置里读成 en');
-    final rendered = _shiftLine(tester);
-    expect(rendered, contains('08:00 – 08:00 (next day)'));
-
-    // 时间那一段里不能有中文（旧实现硬编码「次日」就会漏出来）。
-    // 只查时间那一段：数据库里存的班次名是按**存库时**的语言生成的，而
-    // 存库发生在 App 读出设置之前，所以它还是中文 —— 那是另一回事。
-    final spans = (tester
-            .widget<Text>(find.byKey(const Key('info-card-shift-line')))
-            .textSpan! as TextSpan)
-        .children!
-        .whereType<TextSpan>();
-    final timeSpan = spans.firstWhere((s) => (s.text ?? '').contains('08:00'));
-    expect(RegExp(r'[一-鿿]').hasMatch(timeSpan.text!), isFalse);
-    expect(find.textContaining('次日'), findsNothing);
-
-    await _disposeCalendar(tester);
-  });
+  // 注：信息卡（含「其他班组」色块、班次时间行）已随 #3 删除，信息合并进格子；
+  // 相关旧用例一并删去。跨午夜的全时刻展示（「次日」）现在只活在调班弹层、
+  // 编辑器与桌面小组件（各自有测试钉着）。
 
   test('横屏：格子高度不再只按宽度算', () {
     // 起因：`cellH = cellW / 0.78` 只按宽度算。横屏 cellW ≈ 125 → cellH ≈ 160，
@@ -349,301 +272,49 @@ void main() {
     }
   });
 
-  // 用信息卡自己的日期文本定位。不要用 L10n.today —— 「今天」在顶栏按钮和
-  // 信息卡的「今天」徽章各出现一次，find.text 会一次命中两个。
-  Finder cardDate() =>
-      find.text(L10n.monthDayWeekday(dateOnly(DateTime.now())));
-
-  testWidgets('宽屏：日历改左右分栏，信息卡在右不在下', (tester) async {
+  testWidgets('宽屏：日历改左右分栏，右栏给详情内容留位', (tester) async {
     // ⚠️ **尺寸必须写成「宽且横」**（1280×800）。原来只传了 `width: 1280`、
     // 高度取 `_pumpCalendar` 的默认 1600 —— 那其实是一台**竖着的平板**，
     // 而分栏的判据是「宽且矮」（手机横屏）与「宽且高且横向」（平板/车机），
     // 竖屏平板本该走竖屏那一套。这条用例以前能过，是因为当时判据只看了宽度。
     await _pumpCalendar(tester, 'four_crew_three_shift',
         width: 1280, height: 800);
-    expect(tester.getTopLeft(cardDate()).dx, greaterThan(640),
-        reason: '宽屏下信息卡应当被排在右栏，而不是底栏');
+    final rail = tester.getRect(find.byKey(const Key('info-rail')));
+    expect(rail.left, greaterThan(640),
+        reason: '宽屏下右栏应当排在网格右边');
+    // 网格在左栏里照常渲染。
+    expect(find.byKey(const ValueKey('day-card-1')), findsOneWidget);
     await _disposeCalendar(tester);
   });
 
-  testWidgets('竖屏：仍是单栏，信息卡在下方', (tester) async {
+  testWidgets('竖屏：仍是单栏，不出现右栏', (tester) async {
     await _pumpCalendar(tester, 'four_crew_three_shift');
-    expect(tester.getTopLeft(cardDate()).dx, lessThan(420));
-    expect(tester.getTopLeft(cardDate()).dy, greaterThan(600),
-        reason: '竖屏下信息卡在底部区域');
+    expect(find.byKey(const Key('info-rail')), findsNothing);
+    expect(find.byKey(const ValueKey('day-card-1')), findsOneWidget);
     await _disposeCalendar(tester);
   });
 
-  testWidgets('短屏：信息卡压成紧凑版，把高度让给网格', (tester) async {
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-    final portraitH = tester.getSize(find.byType(GlassTile).last).height;
-    await _disposeCalendar(tester);
-
+  testWidgets('短屏：网格照常渲染（不再为信息卡让位）', (tester) async {
+    // 旧版式在 isShort 下隐藏网格给信息卡让位；信息卡删掉之后那个理由跟着
+    // 消失 —— 短窗整页只剩顶栏是真缺陷（D36 的处方：网格任何时候都画）。
     await _pumpCalendar(tester, 'four_crew_three_shift',
         width: 420, height: 420);
-    final shortH = tester.getSize(find.byType(GlassTile).last).height;
+    expect(find.byKey(const ValueKey('day-card-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('day-card-28')), findsOneWidget);
     await _disposeCalendar(tester);
-
-    expect(shortH, lessThan(portraitH),
-        reason: '短屏下信息卡应当比竖屏矮，把高度让给网格');
   });
 
   testWidgets('窄屏：顶栏「今天」收成纯图标钮', (tester) async {
-    // 「今天」这两个字在顶栏按钮与信息卡的「今天」徽章里各有一处，
-    // 所以数总数：宽屏 2 处，窄屏只剩徽章那 1 处。
+    // 信息卡（含它的「今天」徽章）已删：宽屏只剩顶栏胶囊那一处文字；
+    // 320 宽下胶囊收成图标 → 一处文字都没有，只剩图标。
     await _pumpCalendar(tester, 'four_crew_three_shift');
-    expect(find.text(L10n.today), findsNWidgets(2));
+    expect(find.text(L10n.today), findsOneWidget);
     await _disposeCalendar(tester);
 
     await _pumpCalendar(tester, 'four_crew_three_shift', width: 320);
-    expect(find.text(L10n.today), findsOneWidget,
-        reason: '320 宽下顶栏那两个该收起来，只留下信息卡的徽章');
+    expect(find.text(L10n.today), findsNothing,
+        reason: '320 宽下顶栏「今天」该收成纯图标');
     expect(find.byIcon(Icons.today_outlined), findsWidgets);
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('点开某天：信息卡高度只由本月决定，不随选中哪天变', (tester) async {
-    // 起因：竖屏是 `Column[顶栏, Expanded(网格), 信息卡]`，格子高度按**剩余
-    // 空间**算，所以信息卡随当天内容长高一点，六个格子就集体矮一点。
-    // 内容里会变的至少有四处：法定节假日徽章、农历描述换行、其他班组色块
-    // 换行、有没有班次/闹钟 —— 点一天晃一次。
-    //
-    // v0.6.10 起高度是**算**出来的（`info_card_metrics.dart`）：取本月最满的
-    // 一天。所以这里同时盯两件事 —— 月内恒定，且紧到不留白。
-    await _pumpCalendar(tester, 'six_crew_three_shift');
-
-    final box = find.byKey(const Key('info-card-box'));
-    final cardH = tester.getSize(box).height;
-
-    // 把整月的每一天都点一遍：每天的农历、节气、节日与班次都不一样。
-    final daysInMonth =
-        DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
-    var maxContentH = 0.0;
-    for (var d = 1; d <= daysInMonth; d++) {
-      await tester.tap(find.text('$d').first);
-      await tester.pump();
-      expect(tester.getSize(box).height, cardH,
-          reason: '$d 日：信息卡高度不该随当天内容变，否则格子会跟着伸缩');
-      final contentH =
-          tester.getSize(find.byKey(const Key('info-card-content'))).height;
-      maxContentH = math.max(maxContentH, contentH);
-      expect(contentH, lessThanOrEqualTo(cardH),
-          reason: '$d 日：卡片内容 $contentH 装不进卡片 $cardH');
-    }
-
-    // 高度 = 本月最满的一天 + 卡片自身的上下内边距与描边，且**刚好**是这个值：
-    // 留多了就是白占网格的高度（这正是写死 248 时的毛病），留少了就要裁字。
-    // 允许 2dp 的取整余量。
-    //
-    // 卡片上下内边距是 `spaceLg`(16)×2，描边是 `Border.all(width: 1)`×2 ——
-    // 与 `info_card_metrics.dart` 的 `_cardChromeV` 同一个算式，别再写死。
-    final inner = cardH - (AppTokens.spaceLg * 2 + 2);
-    expect(inner - maxContentH, greaterThanOrEqualTo(0),
-        reason: '本月最满的一天 $maxContentH 装不进卡片内高 $inner');
-    expect(inner - maxContentH, lessThanOrEqualTo(2),
-        reason: '卡片内高 $inner 比最满的一天 $maxContentH 高出太多，空格子白占网格');
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡高度跟着「其他班组」占几行走', (tester) async {
-    // 高度的逐日差异只有三处：节假日徽章、农历行数、其他班组色块折行数。
-    // 前两处是「本月有没有」，第三处是「这个排班有几个班组」—— 班组越多色块
-    // 占的行越多，卡片越高。这条用例盯住它确实跟着变（否则高度就是写死的）。
-    final heights = <String, double>{};
-    for (final t in ['four_crew_three_shift', 'six_crew_three_shift']) {
-      await _pumpCalendar(tester, t);
-      heights[t] = tester.getSize(find.byKey(const Key('info-card-box'))).height;
-      await _disposeCalendar(tester);
-    }
-
-    expect(heights['six_crew_three_shift'],
-        greaterThan(heights['four_crew_three_shift']!),
-        reason: '六个班组的色块比四个班组多占行，卡片该更高');
-  });
-
-  testWidgets('没有法定节假日的月份：卡片更矮，网格拿到更多高度', (tester) async {
-    // 「换月时高度可能变一次」是这套做法的代价，也是它的收益：没有节假日的
-    // 月份不必为节假日徽章那一行留着空。这里盯住收益真的兑现了 —— 卡片变矮，
-    // 而矮下来的高度确实还给了网格。
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-
-    final box = find.byKey(const Key('info-card-box'));
-    final grid = find.byType(SingleChildScrollView).first;
-
-    DateTime? plainMonth;
-    DateTime? holidayMonth;
-    var plainCardH = 0.0;
-    var plainGridH = 0.0;
-    var holidayCardH = 0.0;
-    var holidayGridH = 0.0;
-    final start = DateTime(DateTime.now().year, DateTime.now().month, 1);
-    for (var i = 0; i < 24 && (plainMonth == null || holidayMonth == null); i++) {
-      if (i > 0) {
-        await tester.tap(find.byIcon(Icons.chevron_right_outlined));
-        await tester.pumpAndSettle();
-      }
-      final m = DateTime(start.year, start.month + i, 1);
-      final days = DateTime(m.year, m.month + 1, 0).day;
-      final hasHoliday = List.generate(
-              days, (k) => lunarOf(DateTime(m.year, m.month, k + 1)))
-          .any((l) => l.isLegalHoliday);
-      if (hasHoliday) {
-        holidayMonth ??= m;
-      } else {
-        plainMonth ??= m;
-      }
-
-      if (m == plainMonth) plainCardH = tester.getSize(box).height;
-      if (m == plainMonth) plainGridH = tester.getSize(grid).height;
-      if (m == holidayMonth) holidayCardH = tester.getSize(box).height;
-      if (m == holidayMonth) holidayGridH = tester.getSize(grid).height;
-    }
-
-    expect(plainMonth, isNotNull, reason: '两年内总该有一个月没有法定节假日');
-    expect(holidayMonth, isNotNull, reason: '两年内总该有一个月有法定节假日');
-    expect(plainCardH, lessThan(holidayCardH),
-        reason: '没有节假日的月份不该留着徽章那一行的高度');
-    expect(plainGridH, greaterThan(holidayGridH),
-        reason: '卡片矮下来的高度要真的给到网格，而不是留在空档里');
-
-    await _disposeCalendar(tester);
-  });
-
-  // 回归：v0.6.6 用户实测「信息卡最左侧那根色条错位，且不跟卡片变高变矮」。
-  //
-  // 根因是色条与面板各量各的高度：`Stack` 默认 `StackFit.loose`，只给非定位
-  // 子节点松约束，面板于是缩到内容高度（用户那天 126）；而色条是
-  // `Positioned(top: 18, bottom: 18)`（现值 `spaceLg`=16），量的是外面那个定高
-  // 盒子（248）—— 于是色条比卡片长出 86dp 垂在空白里。修法是底栏时让面板撑满
-  // 定高，两边同源。
-  // 底栏信息卡测试：今日信息卡已在 #3 删除，这些测试需要重写
-  // testWidgets('底栏信息卡：面板撑满定高，色条与面板上下对齐', (tester) async {
-  //   await _pumpCalendar(tester, 'four_crew_three_shift');
-  //
-  //   final box = tester.getRect(find.byKey(const Key('info-card-box')));
-  //   final panel = tester.getRect(find.byKey(const Key('info-card-panel')));
-  //   final bar = tester.getRect(find.byKey(const Key('info-card-accent-bar')));
-  //
-  //   expect(panel.height, closeTo(box.height, 0.5),
-  //       reason: '面板要撑满定高盒子；否则色条按盒子高度画、会探出卡片的下沿');
-  //   expect(bar.top - panel.top, closeTo(AppTokens.spaceLg, 0.5),
-  //       reason: '色条上端贴着面板内容区的上沿');
-  //   expect(panel.bottom - bar.bottom, closeTo(AppTokens.spaceLg, 0.5),
-  //       reason: '色条下端贴着面板内容区的下沿');
-  //
-  //   await _disposeCalendar(tester);
-  // });
-
-  // 回归：卡片是**定高**的，内容装不下时靠卡内滚动兜底 —— 也就是说内容一旦
-  // 超过可用高度，最后一行就被底边裁掉，而卡片本身不会变大去提醒你。
-  // v0.6.7 实测：六班组那种排满的日子内容已经 224dp，可用只有 210dp，
-  // 「其他班组」最后一行被裁掉一截。这条不变量盯住它。
-  testWidgets('底栏信息卡：最满的一天也要装得进卡片，不靠卡内滚动', (tester) async {
-    await _pumpCalendar(tester, 'six_crew_three_shift');
-
-    // 可用高度 = 定高 − 上下 padding(spaceLg=16 ×2) − 上下描边(1×2)。描边那 2px
-    // 来自 GlassPanel 的 `Border.all(width: 1)`，`Container` 会把它算进自己的
-    // 内边距。与 `info_card_metrics.dart` 的 `_cardChromeV` 同一个算式。
-    final inner = tester.getSize(find.byKey(const Key('info-card-box'))).height -
-        (AppTokens.spaceLg * 2 + 2);
-
-    final daysInMonth =
-        DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
-    for (var d = 1; d <= daysInMonth; d++) {
-      await tester.tap(find.text('$d').first);
-      await tester.pump();
-      final contentH =
-          tester.getSize(find.byKey(const Key('info-card-content'))).height;
-      expect(contentH, lessThanOrEqualTo(inner),
-          reason: '$d 日：内容 $contentH 高过卡片内部的 $inner，'
-              '最后一行会被底边裁掉');
-    }
-
-    await _disposeCalendar(tester);
-  });
-
-  // 回归：v0.6.7 用户实测「法定节假日徽章太宽，把农历挤到右边，两行都显示不全」。
-  // 徽章连图标带「法定节假日 · 」有一百多 dp，和农历并排时农历只剩一半宽度。
-  testWidgets('信息卡：节假日徽章自占一行，农历独占下一行且不再被挤到右边',
-      (tester) async {
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-
-    // 找出本月的第一个法定节假日（中秋那种）。
-    final badgeFinder = find.byKey(const Key('info-card-holiday-badge'));
-    final daysInMonth =
-        DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
-    var found = false;
-    for (var d = 1; d <= daysInMonth && !found; d++) {
-      await tester.tap(find.text('$d').first);
-      await tester.pump();
-      found = badgeFinder.evaluate().isNotEmpty;
-    }
-    expect(found, isTrue, reason: '本月应当有法定节假日，否则这条用例没有意义');
-
-    final badge = tester.getRect(badgeFinder);
-    final lunar = tester.getRect(find.textContaining('农历').first);
-    final content = tester.getRect(find.byKey(const Key('info-card-content')));
-
-    expect(lunar.top, greaterThanOrEqualTo(badge.bottom - 0.5),
-        reason: '农历要排在徽章**下面**，不再和它挤同一行');
-    expect(lunar.left, closeTo(content.left, 0.5),
-        reason: '农历要从内容区左边起排（占满整行），而不是被徽章推到右边');
-
-    await _disposeCalendar(tester);
-  });
-
-  // 对比度审计跑不到节假日徽章：工装渲染的日历选中的是「今天」，而今天未必是
-  // 节假日，徽章根本不出现在图里。这条直接在控件树上量它的真配色补上缺口 ——
-  // v0.6.8 之前它用原色红压在同色淡底上，浅深两套主题都只有 3.4:1。
-  testWidgets('节假日徽章：文字与淡染底要过 AA 对比度', (tester) async {
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-
-    final badgeFinder = find.byKey(const Key('info-card-holiday-badge'));
-    final daysInMonth =
-        DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
-    for (var d = 1; d <= daysInMonth; d++) {
-      await tester.tap(find.text('$d').first);
-      await tester.pump();
-      if (badgeFinder.evaluate().isNotEmpty) break;
-    }
-    expect(badgeFinder, findsOneWidget, reason: '本月应当有法定节假日');
-
-    final text = tester.widget<Text>(
-        find.descendant(of: badgeFinder, matching: find.byType(Text)).first);
-    // 分隔用的纯空白 span 没有样式，跳过。
-    final spans = (text.textSpan! as TextSpan)
-        .children!
-        .whereType<TextSpan>()
-        .where((s) => s.style?.color != null);
-    final surface = Theme.of(tester.element(badgeFinder)).colorScheme.surface;
-    final bg =
-        Color.alphaBlend(AppTokens.holiday.withValues(alpha: 0.14), surface);
-    for (final span in spans) {
-      final ink = span.style!.color!;
-      expect(AppTokens.contrastRatio(ink, bg), greaterThanOrEqualTo(4.5),
-          reason: '「${span.text!.trim()}」压在徽章底上对比度不够 AA');
-    }
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡：班次名、时间、闹钟在同一行', (tester) async {
-    await _pumpCalendar(tester, 'four_crew_three_shift');
-    // 默认选中今天；先点一个「上夜班」的日子，让时间与闹钟都出来。
-    await tester.tap(find.text('${DateTime.now().day}').first);
-    await tester.pump();
-
-    final line = _shiftLine(tester);
-    expect(line, contains('闹钟'), reason: '闹钟要并进班次那一行，不再单独占一行');
-    expect(
-      tester
-          .widget<Text>(find.byKey(const Key('info-card-shift-line')))
-          .maxLines,
-      1,
-      reason: '整行只占一行文字，这就是「并进同一行」的落点',
-    );
-
     await _disposeCalendar(tester);
   });
 
@@ -761,56 +432,6 @@ void main() {
     await _disposeCalendar(tester);
   });
 
-  testWidgets('格子班次胶囊：选中那天实心（班次色 100%），其余淡染', (tester) async {
-    await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
-
-    // 胶囊底色 = 班次色按 alpha 合成，所以 alpha 就是「实心 / 淡染」的判据。
-    // 读 `AnimatedContainer` 上的 `decoration`（目标值）：补间进行中也断言目标，
-    // 与「落地后应该是什么」一致。
-    BoxDecoration chipDeco(int day) =>
-        tester.widget<AnimatedContainer>(find.byKey(ValueKey('day-card-$day')))
-            .decoration! as BoxDecoration;
-    double chipAlpha(int day) => chipDeco(day).color!.a;
-
-    final today = DateTime.now().day;
-    final other = today == 1 ? 2 : 1;
-
-    // 初始选中「今天」（`initState` 就把 `_selected` 设成今天）。
-    expect(chipAlpha(today), closeTo(1.0, 1e-6),
-        reason: '选中那天的胶囊要实心 —— 首帧就选中的日子也必须生效，'
-            '这里曾经因为底色走 AnimatedContainer 而停在淡染');
-    expect(chipAlpha(other), closeTo(0.14, 1e-6), reason: '没选中的那天要淡染');
-
-    // 换选一天：实心跟着走。
-    await tester.tap(find.text('$other').first);
-    await tester.pumpAndSettle();
-    expect(chipAlpha(other), closeTo(1.0, 1e-6));
-    expect(chipAlpha(today), closeTo(0.14, 1e-6));
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('格子班次胶囊：实心时文字色取 onSolid，且与底色过 AA', (tester) async {
-    await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
-    final today = DateTime.now().day;
-
-    final chip = tester.widget<AnimatedContainer>(
-        find.byKey(ValueKey('day-card-$today')));
-    final deco = chip.decoration! as BoxDecoration;
-    final ink = tester
-        .widget<Text>(find.descendant(
-            of: find.byKey(ValueKey('day-card-$today')),
-            matching: find.byType(Text)))
-        .style!
-        .color!;
-
-    // 实心胶囊只有「白或黑」两种文字色（`onSolid`），且对任何底色都 ≥ 4.58:1。
-    expect(ink, AppTokens.onSolid(deco.color!));
-    expect(AppTokens.contrastRatio(ink, deco.color!), greaterThanOrEqualTo(4.5));
-
-    await _disposeCalendar(tester);
-  });
-
   testWidgets('选中块：不能带 boxShadow —— 阴影会从半透明块内透出来洗掉胶囊色相',
       (tester) async {
     await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
@@ -853,81 +474,25 @@ void main() {
     await _disposeCalendar(tester);
   });
 
-  testWidgets('格子班次胶囊：简称套在 FittedBox 里，不靠算宽度', (tester) async {
-    // v0.7.1 的坑：胶囊字号原本按「字数 × 基准字号」硬算可用宽度，是**零余量**
-    // 的 —— 两字简称差一点点就退化成「上…」，系统字号一放大整串字都没了
-    // （真机实测）。改成让 FittedBox 按实际排版缩，这里钉住那个兜底还在。
-    await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
-
-    final chip = find.byKey(ValueKey('day-card-${DateTime.now().day}'));
-    expect(chip, findsOneWidget, reason: '今天那格应该有班次胶囊');
-    expect(find.descendant(of: chip, matching: find.byType(FittedBox)),
-        findsOneWidget,
-        reason: '胶囊文字必须套 FittedBox 兜底（宽度算不准，让排版自己缩）');
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡待办提示：选中那天有待办才显示，且不改变卡片高度', (tester) async {
-    final db = await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
-    final today = dateOnly(DateTime.now());
-    await AppRepository(db).addEvent(
-      title: '交体检报告',
-      date: today,
-      timeMinute: 14 * 60 + 30,
-      advanceRemindMinutes: 15,
-    );
+  // 长按一格（不拖动）= 选中那一天，松手弹「调整班次」—— 信息卡删除后这
+  // 是单日调整的唯一入口。
+  Future<void> longPressDay(WidgetTester tester, DateTime day) async {
+    await tester.longPress(find.byKey(ValueKey('day-card-${day.day}')));
     await tester.pumpAndSettle();
+  }
 
-    expect(find.byKey(const Key('info-card-todo-hint')), findsOneWidget);
-    expect(find.text(L10n.todoCount(1)), findsOneWidget);
-    final heightOnTodoDay =
-        tester.getSize(find.byKey(const Key('info-card-box'))).height;
-
-    // 换到本月里没待办的一天：提示要消失，而卡片高度必须**一点不变** ——
-    // 它是定高的（`info_card_metrics.dart`），变一点上面的格子就跟着抖。
-    final other = today.day == 1 ? 2 : 1;
-    await tester.tap(find.text('$other').first);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('info-card-todo-hint')), findsNothing);
-    expect(tester.getSize(find.byKey(const Key('info-card-box'))).height,
-        heightOnTodoDay,
-        reason: '有没有待办提示都不该改变卡片高度');
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡待办提示：窄屏不显示（放不下，会挤掉日期的字）', (tester) async {
-    final db = await _pumpCalendar(tester, 'white_white_night_night_rest_rest',
-        width: 320);
-    await AppRepository(db).addEvent(
-      title: '交体检报告',
-      date: dateOnly(DateTime.now()),
-      timeMinute: 14 * 60,
-      advanceRemindMinutes: 15,
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('info-card-todo-hint')), findsNothing);
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡那行班次可点，弹层选中后日历跟着变', (tester) async {
+  testWidgets('长按格子打开调整弹层，选中后日历跟着变', (tester) async {
     final db = await _pumpCalendar(tester, 'day_night_rest_rest');
     final today = dateOnly(DateTime.now());
 
-    // 点开入口
-    await tester.tap(find.byKey(const Key('info-card-shift-line')));
-    await tester.pumpAndSettle();
+    await longPressDay(tester, today);
     expect(find.text(L10n.adjustShift), findsOneWidget,
         reason: '弹层要自己说明是干什么的 —— 2026-10-13 反馈：只写日期区间，'
             '长按弹出的那一屏没有任何一处说它是「调整班次」');
 
     // 挑一个与当前不同的班次
-    final before = _shiftLine(tester);
     final classes = await db.select(db.shiftClassRows).get();
-    final target = classes.firstWhere((c) => !before.contains(c.name));
+    final target = classes.first;
 
     await tester.tap(find.text(target.name).last);
     await tester.pumpAndSettle();
@@ -938,10 +503,8 @@ void main() {
     expect(rows.single.day, dayNumber(today));
     expect(rows.single.classId, target.id);
 
-    // 界面上那天换了班
-    expect(_shiftLine(tester), contains(target.name));
-    // 并且带上「已调整」标记
-    expect(find.text(L10n.adjusted), findsWidgets);
+    // 界面上那天换了班（格子上带「已调整」小圆点）
+    expect(find.byKey(ValueKey('day-adjusted-${today.day}')), findsOneWidget);
 
     await _disposeCalendar(tester);
   });
@@ -952,7 +515,7 @@ void main() {
   // → `repo.clearDayOverrides(days)`，`adjustDays` 里那两行）此前**一次也没跑过**。
   // 它要是接错了（比如清了别的日子、或者干脆没清），日历上那天会一直挂着
   // 「已调整」，用户再也回不到轮转。
-  testWidgets('信息卡弹层选「恢复轮转」：覆盖行清掉，「已调整」也不再显示',
+  testWidgets('长按被覆盖的那天选「恢复轮转」：覆盖行清掉，小圆点消失',
       (tester) async {
     final db = await _pumpCalendar(tester, 'day_night_rest_rest');
     final today = dateOnly(DateTime.now());
@@ -963,12 +526,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(await db.select(db.shiftDayOverrides).get(), hasLength(1));
-    expect(find.byKey(const Key('info-card-adjusted')), findsOneWidget);
     expect(find.byKey(ValueKey('day-adjusted-${today.day}')), findsOneWidget);
 
-    // 点开信息卡那行（入口就是它），底部弹层里挑「恢复轮转」
-    await tester.tap(find.byKey(const Key('info-card-shift-entry')));
-    await tester.pumpAndSettle();
+    // 长按那天（入口），底部弹层里挑「恢复轮转」
+    await longPressDay(tester, today);
     expect(find.text(L10n.restoreRotation), findsOneWidget,
         reason: '这天被覆盖过，弹层才该给这条退路');
 
@@ -978,10 +539,8 @@ void main() {
     // 覆盖行清干净，界面回到轮转态
     expect(await db.select(db.shiftDayOverrides).get(), isEmpty,
         reason: '「恢复轮转」要把这天的覆盖行真的删掉');
-    expect(find.byKey(const Key('info-card-adjusted')), findsNothing,
-        reason: '覆盖没了，「已调整」这句说明也要跟着消失');
     expect(find.byKey(ValueKey('day-adjusted-${today.day}')), findsNothing,
-        reason: '格子上的小圆点同理');
+        reason: '格子上的小圆点也要跟着消失');
     // 这里不断「已把 1 天恢复为轮转」那条提示：`adjustDays` 走完
     // `clearDayOverrides` 之后还要 `await AlarmService.rescheduleAll(repo)`，
     // 而那一串原生插件调用在 flutter_test 里不会 resolve（上一版我试着多
@@ -995,8 +554,7 @@ void main() {
   testWidgets('没被覆盖过的那天：弹层不给「恢复轮转」', (tester) async {
     await _pumpCalendar(tester, 'day_night_rest_rest');
 
-    await tester.tap(find.byKey(const Key('info-card-shift-entry')));
-    await tester.pumpAndSettle();
+    await longPressDay(tester, dateOnly(DateTime.now()));
 
     expect(find.text(L10n.restoreRotation), findsNothing,
         reason: '本来就在轮转上，没有可恢复的东西 —— 这条由 canRestore 把住');
@@ -1032,219 +590,6 @@ void main() {
 
   // 设计语言：新加的东西要抄**最近的同类件配方**。
   //
-  // 「已调整」原先是班次行里唯一的**裸文字** —— 而同一页的两个邻居（日期行上的
-  // 「今天」「N 项待办」徽章）都是胶囊。三种形状并排，看着就散。所以它改抄
-  // `_todoHintBadge` 的配方（14% 淡染底 + 45% 同色描边 + `radiusL` + `inkFor`），
-  // 只是不带图标。
-  //
-  // ⚠️ 这条用例**只**钉形状，**不**钉「卡片高度不因标记而变」—— 那个说法是错的：
-  // 高度按**月**预留（`hasOverrideHint`，与 `hasTodoHint` 同一条路），所以「本月
-  // 一天覆盖也没有」与「本月有被调过的日子」两个月份之间高度**本来就该不一样**。
-  // 写成「加覆盖前后高度相同」等于断言那条按月闸门的反面，而且它还会绿 ——
-  // 只因测试字体下胶囊（21.8）比班次行（22.88）矮；等哪天有人把胶囊做高一点，
-  // 它会红，下一个人就会去「修」掉按月预留下来。形状与模型分开钉，各钉各的。
-  testWidgets('「已调整」是胶囊而不是裸文字', (tester) async {
-    final db = await _pumpCalendar(tester, 'day_night_rest_rest');
-
-    final classes = await db.select(db.shiftClassRows).get();
-    final repo = AppRepository(db);
-    final today = dateOnly(DateTime.now());
-    await repo.setDayOverrides([today], classId: classes.first.id);
-    await tester.pumpAndSettle();
-
-    // 标记还在，而且**它自己**就是一颗胶囊（不是裸 Text）。
-    //
-    // 注意 key 就挂在那个 Container 上，所以要用 `tester.widget<Container>` 直接
-    // 看它自己 —— `find.ancestor(of: marker, …)` 找的是它的**祖先**，不含它本身，
-    // 那样写会恒为空、用例假失败。
-    final marker = find.byKey(const Key('info-card-adjusted'));
-    expect(marker, findsOneWidget);
-    final deco =
-        tester.widget<Container>(marker).decoration as BoxDecoration?;
-    expect(deco?.borderRadius, isNotNull,
-        reason: '「已调整」要与同一行另外两个徽章一样是胶囊');
-    expect(deco?.border, isNotNull, reason: '信息胶囊是「淡染底 + 同色描边」两件套');
-
-    await _disposeCalendar(tester);
-  });
-
-  // 「胶囊高度真的进了定高模型」这件事在这里量 —— 界面侧量不到它。
-  //
-  // 界面侧量不到的原因是个字体巧合：`DefaultTextStyle` 走的 Material 排版表行高
-  // 1.43，班次行是 16px 的一行字 → 22.88，而胶囊是 12px×1.15 + 上下内边距 6 +
-  // 描边 2 = 21.8 —— 胶囊**比班次行还矮**，顶不动行高，所以界面高度对「模型有
-  // 没有算它」逐像素不敏感。（真机上字体行高比例一变，胶囊就会成为行里的最高件，
-  // 那时它必须已经被算进取大。）
-  //
-  // 所以这里直接调 `measureBottomInfoCardHeight`，并换一个**紧行高**的
-  // `DefaultTextStyle` 把差别放大出来：行高压到 1.0 后班次行只有 16.0，胶囊 21.8
-  // 成了行里最高件 —— `hasOverrideHint` 的取舍立刻可见、也确实能失败（把
-  // `_adjustedBadgeH` 从取大列表里拿掉，这条即红）。
-  //
-  // **残留缺口**（控制器已知并记在账上）：它证明的是「模型的这一项是通的」，
-  // 而**不**证明「同一个月里换选中哪天高度不变」—— 后者在本夹具里被同一个字体
-  // 巧合遮住（高度对逐日差异不敏感），本套件不钉。
-  testWidgets('定高模型：「本月有被调整的日子」要为「已调整」胶囊多留高度', (tester) async {
-    late BuildContext ctx;
-    await tester.pumpWidget(MaterialApp(
-      home: DefaultTextStyle(
-        // 只压行高，字号/字重照旧走角色令牌（模型内部自带）。
-        style: const TextStyle(height: 1.0),
-        child: Builder(builder: (c) {
-          ctx = c;
-          return const SizedBox.shrink();
-        }),
-      ),
-    ));
-
-    // ⚠️ **必须挂一套真排班**（v0.9.16 改的）：班次行的高度从这一版起是**逐日算**的，
-    // 而 `hasOverrideHint` 只在「那天有班次」时才参与取大。挂 `chain: null` 的话，
-    // 那一天走的是「这段时间没有排班」那一支，两种输入量出来一模一样 —— 这条用例
-    // 换个写法立刻会变成一句永远为真的空话。（「空白表那天不占这一行」由
-    // `info_card_chain_test.dart` 那条新的用例钉住。）
-    //
-    // 一套单班组、两天一轮的排班：不挂多班组就没有色块那一段的干扰，而每天都排得上
-    // 班次（白 / 休交替），那一行天天在。
-    final chain = ScheduleChain(
-      fallback: ShiftSchedule(
-        name: '两天一轮',
-        anchorDate: DateTime.utc(2026, 1, 1),
-        classes: const [
-          ShiftClass(name: '白班', abbr: '白', startMinute: 480, endMinute: 1080),
-          ShiftClass(name: '休班', abbr: '休', isRest: true),
-        ],
-        cycle: const [[0], [1]],
-        teamCount: 1,
-        teamNames: const ['我'],
-        teamOffsets: const [0],
-      ),
-    );
-    double cardH({required bool hasOverrideHint}) => measureBottomInfoCardHeight(
-          context: ctx,
-          cardOuterWidth: 420,
-          chain: chain,
-          month: DateTime(2026, 9, 1),
-          hasTodoHint: false,
-          hasOverrideHint: hasOverrideHint,
-        ).outerHeight;
-
-    expect(cardH(hasOverrideHint: true), greaterThan(cardH(hasOverrideHint: false)),
-        reason: '这个月有被按天调过的日子时，班次行要按「已调整」胶囊的高度预留 —— '
-            '少了这一步，真机上有标记的那天卡片内容会顶出定高');
-
-    await _disposeCalendar(tester);
-  });
-
-  // ── 信息卡最后那行「本月统计」 ──
-  //
-  // 它填的是卡片**按月定高**留下的那截富余：最满的一天（有法定节假日、农历又占两行
-  // 的日子）正好占满，普通日子空出 32~51dp。**卡片高度一像素都不能为此动** —— 动了
-  // 上面六个格子就跟着抖，而用户明确不要那个抖动。所以判定只能是「这天的富余装得下
-  // 就画」，下面两条一条盯「装不下真的不画、画了真的不裁」，一条盯「数字对不对」。
-
-  /// 往后翻，找到第一个**有法定节假日**的月份（只有这种月份才有富余可填；没有节假日
-  /// 的月份，卡片是按普通日子的高度定的，几乎没有空档）。
-  Future<DateTime> seekHolidayMonth(WidgetTester tester) async {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    for (var i = 0; i < 24; i++) {
-      if (i > 0) {
-        await tester.tap(find.byIcon(Icons.chevron_right_outlined));
-        await tester.pumpAndSettle();
-      }
-      final m = DateTime(start.year, start.month + i, 1);
-      final days = DateTime(m.year, m.month + 1, 0).day;
-      final has = List.generate(days, (k) => lunarOf(DateTime(m.year, m.month, k + 1)))
-          .any((l) => l.isLegalHoliday);
-      if (has) return m;
-    }
-    fail('两年内总该有一个月有法定节假日');
-  }
-
-  /// 点开这一天，并回答「统计行画着没有」。
-  Future<bool> tapDay(WidgetTester tester, int day) async {
-    await tester.tap(find.text('$day').first);
-    await tester.pump();
-    return find.byKey(const Key('info-card-month-tally')).evaluate().isNotEmpty;
-  }
-
-  testWidgets('信息卡「本月统计」：只画在装得下的那天，最满的一天不画', (tester) async {
-    await _pumpCalendar(tester, 'six_crew_three_shift');
-    final m = await seekHolidayMonth(tester);
-
-    final box = find.byKey(const Key('info-card-box'));
-    final content = find.byKey(const Key('info-card-content'));
-    final cardH = tester.getSize(box).height;
-    final inner = cardH - (AppTokens.spaceLg * 2 + 2);
-    final days = DateTime(m.year, m.month + 1, 0).day;
-
-    var maxContent = 0.0;
-    var shown = 0;
-    var hidden = 0;
-    for (var d = 1; d <= days; d++) {
-      final hasTally = await tapDay(tester, d);
-      expect(tester.getSize(box).height, cardH,
-          reason: '$d 日：统计行不许把卡片顶高 —— 顶高一像素，上面六个格子就集体矮一像素');
-      final c = tester.getSize(content).height;
-      maxContent = math.max(maxContent, c);
-      if (hasTally) {
-        shown++;
-        expect(c, lessThanOrEqualTo(inner),
-            reason: '$d 日：画了统计行之后内容 $c 装不进卡片内高 $inner，最后一行会被裁掉');
-      } else {
-        hidden++;
-      }
-    }
-    expect(shown, greaterThan(0),
-        reason: '有节假日的月份里普通日子是有富余的，一天都没画说明判定收得太紧');
-    expect(hidden, greaterThan(0), reason: '最满的那天富余为 0，那天必须不画');
-
-    // 前提：卡片确实紧贴最满的那天（容 2dp 取整余量，与另一条用例同口径）。
-    expect(inner - maxContent, lessThanOrEqualTo(2),
-        reason: '卡片该是紧贴最满那天的；高出太多说明富余被算漏了');
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('信息卡「本月统计」：数字就是本月的实际班次天数', (tester) async {
-    await _pumpCalendar(tester, 'white_white_night_night_rest_rest');
-    final m = await seekHolidayMonth(tester);
-    final days = DateTime(m.year, m.month + 1, 0).day;
-
-    String? text;
-    for (var d = 1; d <= days && text == null; d++) {
-      if (await tapDay(tester, d)) {
-        text = tester
-            .widget<Text>(find.byKey(const Key('info-card-month-tally')))
-            .data;
-      }
-    }
-    expect(text, isNotNull, reason: '有节假日的月份里该有画着统计行的日子');
-    expect(text, startsWith(L10n.monthTally));
-
-    final parts = text!.substring(L10n.monthTally.length).trim().split(' · ');
-    expect(parts, isNotEmpty);
-    var total = 0;
-    final labels = <String>[];
-    for (final p in parts) {
-      // 形状是「简称 + 数字」：白12 / 夜8 / 休11（英文是 M12 / N8 / O11）。
-      final match = RegExp(r'^(\D+?)(\d+)$').firstMatch(p);
-      expect(match, isNotNull, reason: '「$p」不符合「简称 + 数字」的形状');
-      labels.add(match!.group(1)!);
-      final n = int.parse(match.group(2)!);
-      expect(n, greaterThan(0), reason: '「$p」是 0 天，那这个班次这个月根本没出现');
-      total += n;
-    }
-    expect(labels.toSet().length, labels.length, reason: '同一个班次不许出现两次');
-    expect(labels.length, greaterThanOrEqualTo(2), reason: '这个模板至少白 / 夜 / 休三种班');
-    expect(total, days,
-        reason: '数的是**整月**（不是到今天为止），每天都有班次，加总该等于这个月的天数');
-
-    await _disposeCalendar(tester);
-  });
-
-  // ── 换月动画 ──
-
   testWidgets('换月：进出两版同时在树上，落定后只剩一版', (tester) async {
     // 换月从前是瞬切。加了位移 + 淡入之后要盯两件事：动画真的起来了（两版同时在
     // 树上，而不是被同一个键判成「同一个孩子」直接换掉），以及落定之后不留残影
@@ -1389,17 +734,16 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // 滑块吸附到下一行那一格 → 选中日变成 15 日，且那一格的胶囊是实心的。
-    final now = DateTime.now();
-    expect(
-        find.text(L10n.monthDayWeekday(
-            DateTime(now.year, now.month, _rangeLastDay))),
-        findsOneWidget,
+    // 滑块吸附到下一行那一格 → 选中块落在 15 日那格上（胶囊已随 #3 删除，
+    // 选中位置改由 `calendar-selection-block` 的落点钉住）。
+    final block =
+        tester.getRect(find.byKey(const Key('calendar-selection-block')));
+    final target =
+        tester.getRect(find.byKey(const ValueKey('day-card-$_rangeLastDay')));
+    expect(block.center.dx, closeTo(target.center.dx, 1.0),
         reason: '立刻滑动仍要吸附到下一行那一格');
-    final chip = tester.widget<AnimatedContainer>(
-        find.byKey(const ValueKey('day-card-$_rangeLastDay')));
-    expect((chip.decoration! as BoxDecoration).color!.a, closeTo(1.0, 1e-6),
-        reason: '松手后滑块落在那格，胶囊要实心');
+    expect(block.center.dy, closeTo(target.center.dy, 1.0),
+        reason: '立刻滑动仍要吸附到下一行那一格');
     // 而且这一下**不是**长按拖选：没弹改班层，也就没落任何覆盖。
     expect(await db.select(db.shiftDayOverrides).get(), isEmpty,
         reason: '立刻滑动不该被当成长按拖选');
@@ -1466,20 +810,18 @@ void main() {
   //     整张日历被它盖住 —— 那才是这一对的起因。
   // 反面（真的没有任何班表时照旧盖）由 `calendar_chain_test` 的
   // 「其余时间为无 + 没有段」那条罩着。
-  testWidgets('空白表方案：整月一天胶囊都不画，但也不说「没有排班」', (tester) async {
+  testWidgets('空白表方案：格子只画日期与农历，也不说「没有排班」', (tester) async {
     await _pumpCalendar(tester, 'day_night_rest_rest', blank: true);
 
     expect(find.text(L10n.noScheduleHere), findsNothing,
         reason: '有班表在管（跟随法定节假日），不该说「这段时间没有排班」');
     expect(find.text(L10n.noSchedule), findsNothing,
-        reason: '信息卡里那句同样不该出现');
+        reason: '同样不该在别处冒出这句');
 
-    final today = DateTime.now();
-    final daysInMonth = DateTime(today.year, today.month + 1, 0).day;
-    for (var d = 1; d <= daysInMonth; d++) {
-      expect(find.byKey(ValueKey('day-card-$d'), skipOffstage: false),
-          findsNothing, reason: '$d 日不该画任何班次胶囊 —— 空白表就是一张日历');
-    }
+    // 旧版曾给它合成「上班 / 休息」，那是拿显示迁就判据，已回退。
+    expect(find.text(L10n.workday), findsNothing);
+    expect(find.text(L10n.rest), findsNothing);
+
     // 格子还在（不是一张空网格）：日期与农历照旧。
     expect(find.byKey(const ValueKey('day-card-1')), findsOneWidget);
 
@@ -1672,130 +1014,55 @@ void main() {
     await _disposeCalendar(tester);
   });
 
-  testWidgets('信息卡那行用玻璃按压缩放，不引入 Material 水波纹', (tester) async {
-    await _pumpCalendar(tester, 'day_night_rest_rest');
-
-    final entry = find.byKey(const Key('info-card-shift-entry'));
-    expect(entry, findsOneWidget);
-
-    // 这一行的按压反馈必须是 GlassPressable（Q 弹缩放），不能是裸 InkWell。
-    //
-    // `info-card-shift-entry` 这个 key 就挂在 GlassPressable 上，所以不能写
-    // `find.descendant(of: entry, matching: find.byType(GlassPressable))` ——
-    // descendant 只找**后代**，不含自身，那样写恒为空。
-    expect(
-      find.descendant(of: entry, matching: find.byType(InkWell)),
-      findsNothing,
-      reason: '全 app 的按压反馈是玻璃缩放；水波纹只该出现在弹层的 ListTile 里',
-    );
-    expect(tester.widget(entry), isA<GlassPressable>());
-
-    // 点击必须照旧能打开选择层
-    await tester.tap(entry);
-    await tester.pumpAndSettle();
-    expect(find.text(L10n.restoreRotation), findsNothing,
-        reason: '今天没被调整过，所以不该有「恢复轮转」');
-    expect(find.byType(ListTile), findsWidgets, reason: '选择层该弹出来了');
-
-    await _disposeCalendar(tester);
-  });
-
-  testWidgets('小窗（高 < 480dp）：网格让位，只留信息卡；「已调班」还在', (tester) async {
+  testWidgets('小窗（高 < 480dp）：网格照常渲染；「已调班」圆点还在', (tester) async {
     // 200×400 是各机型小窗的默认尺寸（也是我们真机上量到的那档）。
     final db = await _pumpCalendar(tester, 'day_night_rest_rest',
         width: 200, height: 400);
 
-    // 先确认这个尺寸确实落进了小窗那一档：网格不画了。
-    expect(find.byKey(const ValueKey('day-card-8')), findsNothing,
-        reason: '小窗下两者都想要的结果是两者都看不清 —— 格子让位给信息卡');
+    // 旧版式在 isShort 下隐藏网格给信息卡让位；卡已删（#3），网格任何时候都画
+    //（旧条件留下来的是真缺陷：这一档整页只剩顶栏，不报错）。
+    expect(find.byKey(const ValueKey('day-card-8')), findsOneWidget);
 
-    // 给「今天」上一条按天调整，标记必须出现在信息卡上。
+    // 给「今天」上一条按天调整，标记必须出现在格子上。
     final classes = await db.select(db.shiftClassRows).get();
     await AppRepository(db)
         .setDayOverrides([dateOnly(DateTime.now())], classId: classes.first.id);
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('info-card-adjusted')), findsOneWidget,
-        reason: '小窗里格子窄到画不出胶囊、圆点根本不会出现，'
-            '信息卡是唯一还能承载这个标记的地方');
+    expect(find.byKey(ValueKey('day-adjusted-${DateTime.now().day}')),
+        findsOneWidget);
 
     await _disposeCalendar(tester);
   });
 
-  // 空白表（跟随法定节假日）在小窗那一档：**不画网格**，信息卡是屏幕上唯一的内容。
-  //
-  // 那两个字（上班 / 休息）在 v0.9.16 撤掉了，而**「没有排班」那句同样不能有** ——
-  // 这是两条判据的分工在小窗上的样子：不替它断言，但也不说它没排班。
+  // 空白表（跟随法定节假日）在小窗那一档：格子照常画，但不替它断言上不上班、
+  // 也不说「没有排班」—— 两条判据的分工在小窗上的样子。
   testWidgets('空白表方案：小窗那一档不写「上班」，也不说「没有排班」', (tester) async {
     await _pumpCalendar(tester, 'day_night_rest_rest',
         blank: true, width: 200, height: 400);
 
-    expect(find.byKey(const ValueKey('day-card-8')), findsNothing,
-        reason: '确认这个尺寸确实落进了小窗那一档（网格让位）');
+    expect(find.byKey(const ValueKey('day-card-8')), findsOneWidget,
+        reason: '网格任何时候都画（不再让位）');
     expect(find.text(L10n.workday), findsNothing);
     expect(find.text(L10n.rest), findsNothing);
     expect(find.text(L10n.noSchedule), findsNothing);
-    // 日期还在（卡片不是空的，只是不再多说什么）。
-    expect(find.text(L10n.monthDay(dateOnly(DateTime.now()))), findsOneWidget);
 
     await _disposeCalendar(tester);
   });
 
-  testWidgets('400×640 那档小窗不受影响：网格与「已调班」都还在', (tester) async {
-    // 各机型小窗的默认尺寸，高 640 > 480，**不该**被上面那条规则收走网格。
+  testWidgets('400×640 那档小窗：网格照常渲染，「已调班」圆点还在', (tester) async {
+    // 各机型小窗的默认尺寸，高 640 > 480。
     final today = dateOnly(DateTime.now());
     final db = await _pumpCalendar(tester, 'day_night_rest_rest',
         width: 400, height: 640);
 
-    expect(find.byKey(ValueKey('day-card-${today.day}')), findsWidgets,
-        reason: '这档是主流小窗尺寸，必须保持网格 + 完整信息卡');
+    expect(find.byKey(ValueKey('day-card-${today.day}')), findsOneWidget);
 
     final classes = await db.select(db.shiftClassRows).get();
     await AppRepository(db).setDayOverrides([today], classId: classes.first.id);
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('info-card-adjusted')), findsOneWidget);
-
-    await _disposeCalendar(tester);
-  });
-
-  // 一个班次挂多个闹钟之后，信息卡那一行**只有一行**（卡片是定高的，多出来的
-  // 内容会顶高卡片、把网格挤矮）—— 所以只写首条 + 「等 N 个」。
-  testWidgets('信息卡：一个班次多个闹钟时只写首条 + 「等 N 个」', (tester) async {
-    final db = await _pumpCalendar(tester, 'four_crew_three_shift');
-    // 给第一个班次塞三条闹钟，然后**逐天点过去找它** —— 不假定「今天」正好上
-    // 这个班次（模板的周期第一个元素是什么、今天轮到谁，都不该写死在用例里）。
-    await AppRepository(db).setClassAlarmsForTesting(0, const [
-      ShiftAlarm(minute: 6 * 60 + 30, label: '起床'),
-      ShiftAlarm(minute: 12 * 60 + 30, label: '午休'),
-      ShiftAlarm(minute: 17 * 60 + 30),
-    ]);
-    final daysInMonth =
-        DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
-    var found = false;
-    for (var d = 1; d <= daysInMonth && !found; d++) {
-      await tester.tap(find.text('$d').first);
-      await tester.pumpAndSettle();
-      final line = _shiftLine(tester);
-      if (line.contains('06:30')) {
-        found = true;
-        expect(line, contains('等 3 个'),
-            reason: '卡片定高、这一行只有一行：铺开列三个时刻会把后面的内容挤掉');
-      }
-    }
-    expect(found, isTrue, reason: '本月应当有上这个班次的日子，否则这条用例没有意义');
-
-    // spec §11 点名的断言：3 条闹钟那天的**卡片内容高度**必须与 1 条时一模一样
-    // （那一行仍然只有一行；卡片被顶高就会连累日历网格变矮）。
-    final withThree =
-        tester.getSize(find.byKey(const Key('info-card-content'))).height;
-    await AppRepository(db)
-        .setClassAlarmsForTesting(0, const [ShiftAlarm(minute: 6 * 60 + 30)]);
-    await tester.pumpAndSettle();
-    final withOne =
-        tester.getSize(find.byKey(const Key('info-card-content'))).height;
-    expect(withThree, withOne,
-        reason: '多条闹钟只改那一行的文字，不该把卡片顶高');
+    expect(find.byKey(ValueKey('day-adjusted-${today.day}')), findsOneWidget);
 
     await _disposeCalendar(tester);
   });
@@ -1828,42 +1095,6 @@ void main() {
       }
       expect(_blockScale(tester), 1.0,
           reason: '液态档还留着 1.22 —— 那会与「四面鼓出」叠成两层');
-      await g.up();
-      await tester.pumpAndSettle();
-      await _disposeCalendar(tester);
-    });
-
-    testWidgets('挤字只变换绘制、不改布局', (tester) async {
-      await _pumpCalendar(tester, 'four_crew_three_shift', liquid: true);
-
-      // ⚠️ **锚点不取「今天」**（与上面拖选那几条同一个理由，见 `_rangeFirstDay`）：
-      // 这一条要的是「透镜卡在两格之间、**右邻那格**被挤」，而「今天」在月历里的列
-      // 位置逐日不同 —— 锚在它身上只有每月头两天才成立。2026-10-10 实测：它红了，
-      // 而且与任何改动无关（干净树上一样红）。8 日永远落在第 1 行，右邻是 9 日；
-      // 只有月初偏移为 6（1 号是周日）那种月份 8 / 9 不同行，那种月份改取 9 / 10。
-      final DateTime now = DateTime.now();
-      final int leading = DateTime(now.year, now.month, 1).weekday - 1;
-      final int anchor = leading == 6 ? 9 : 8;
-      final Finder anchorCard = find.byKey(ValueKey('day-card-$anchor'));
-      final Finder neighbour = find.byKey(ValueKey('day-card-${anchor + 1}'));
-
-      // 拖动是从**选中那格**起算的（`onPanStart` 读 `_selectedRect`），所以先选中锚点。
-      await tester.tap(anchorCard);
-      await tester.pumpAndSettle();
-
-      final Size before = tester.getSize(neighbour);
-      // 按住锚点那格，往右拖**半格**（48px = 半格 28 + 被吃掉的 18px slop）——
-      // 透镜正好卡在两格之间，右边那格的内容才会被它的边缘挤到。
-      final TestGesture g = await tester.startGesture(tester.getCenter(anchorCard));
-      for (int i = 0; i < 8; i++) {
-        await g.moveBy(const Offset(6, 0));
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(find.descendant(of: neighbour, matching: find.byType(Transform)),
-          findsWidgets,
-          reason: '那格的内容没被挤 —— 要么透镜没走到两格之间，要么挤字没接上');
-      expect(tester.getSize(neighbour), before,
-          reason: '挤字只该变换绘制，不该改布局（改了就会把字挤出格子）');
       await g.up();
       await tester.pumpAndSettle();
       await _disposeCalendar(tester);
@@ -1951,47 +1182,6 @@ void main() {
       await _disposeCalendar(tester);
     });
 
-    testWidgets('滑行中：挤压场跟着那枚块走，不是一直盯着终点', (tester) async {
-      await _pumpCalendar(tester, 'four_crew_three_shift', liquid: true);
-      final int today = DateTime.now().day;
-      final int other = today >= 15 ? today - 10 : today + 10;
-      final Finder todayBtn = find.byIcon(Icons.today_outlined);
-
-      /// 全月有多少格的内容被透镜挤了（`Transform` 只在液态档、且只在非恒等时套）。
-      int warpedCells() {
-        var n = 0;
-        final int days = DateTime(DateTime.now().year, DateTime.now().month + 1, 0)
-            .day;
-        for (var d = 1; d <= days; d++) {
-          if (tester.any(find.descendant(
-              of: find.byKey(ValueKey('day-card-$d')),
-              matching: find.byType(Transform)))) {
-            n++;
-          }
-        }
-        return n;
-      }
-
-      await tester.tap(todayBtn);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(ValueKey('day-card-$other')));
-      await tester.pumpAndSettle();
-      expect(warpedCells(), 0, reason: '静止时不该有被挤的格子（v0.10.15 那条）');
-
-      await tester.tap(todayBtn);
-      await tester.pump();
-      for (int i = 0; i < 5; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      // 块正卡在格子之间，它扫过的那几格的内容该被挤。
-      expect(warpedCells(), greaterThan(0),
-          reason: '滑行中一格都没被挤 —— 挤压场还盯着终点那一格，没跟着那枚块走');
-
-      await tester.pumpAndSettle();
-      expect(warpedCells(), 0, reason: '落定之后该收干净');
-      await _disposeCalendar(tester);
-    });
-
     testWidgets('滑行中：彩边亮起来（块在动），落定之后熄灭', (tester) async {
       await _pumpCalendar(tester, 'four_crew_three_shift', liquid: true);
       final int today = DateTime.now().day;
@@ -2044,10 +1234,6 @@ void main() {
   // 「连成一条」在今天的结构里做不到：带子只能是网格之上的一层（与那枚单格块同层位）。
   group('液态档那条水带', () {
     /// 那一格的内容有没有被透镜挤（`Transform` 只在液态档、且只在非恒等时套）。
-    bool warped(WidgetTester tester, int day) => tester.any(find.descendant(
-        of: find.byKey(ValueKey('day-card-$day')),
-        matching: find.byType(Transform)));
-
     testWidgets('液态档：多选态不画逐格淡染，改用一枚带子', (tester) async {
       await _pumpCalendar(tester, 'day_night_rest_rest', liquid: true);
       await longPressDragCell(tester, _rangeFirstDay, 1, midDrag: () async {
@@ -2064,39 +1250,6 @@ void main() {
         expect(find.byKey(const ValueKey('day-range-10')), findsOneWidget);
         expect(find.byType(CalendarRangeBand), findsNothing);
       });
-      await _disposeCalendar(tester);
-    });
-
-    testWidgets('只挤**流动那一端**：带子内部那些格不套 Transform', (tester) async {
-      await _pumpCalendar(tester, 'day_night_rest_rest', liquid: true);
-      // 长按 8 日 → 往下拖一格（到 15 日）→ 再往右拖半格。
-      //
-      // ⚠️ 后半截是必需的：挤压场只够到一格的半径，末端**停在格正中**时连它自己
-      // 那一格都不套 Transform（t≈0）。要它挤，末端得卡在**两格之间** ——
-      // 既有的「挤字只变换绘制」那条也是这么拖的（半格）。
-      final Offset start = tester
-          .getCenter(find.byKey(const ValueKey('day-card-$_rangeFirstDay')));
-      final TestGesture g = await tester.startGesture(start);
-      await tester.pump(const Duration(milliseconds: 600)); // 过长按判定
-      await g.moveBy(const Offset(0, 60)); // 下一行 → 末端 15 日
-      await tester.pump();
-      // ⚠️ 34 而不是 28（半格）：格宽 56.6、半格是 28.3 —— 走 28 那一步还**差 0.3px
-      // 没跨过格界**，焦点仍停在 15 日，末端一动不动（第一版就是这么写的，量不到东西）。
-      await g.moveBy(const Offset(34, 0)); // 跨过格界 → 焦点到 16 日、末端淌过去
-      // ⚠️ 推**三帧**：ticker 的第一帧在下一帧才跑，一帧之后末端还停在原处 ——
-      // 那时场心正好压在 15 日正中（`t≈0`，什么都不套），这条就测不到东西。
-      for (int i = 0; i < 3; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-
-      expect(warped(tester, 15) || warped(tester, 16), isTrue,
-          reason: '流动那一端旁边那几格没被挤 —— 挤压场没跟着末端走');
-      expect(warped(tester, 10), isFalse,
-          reason: '带子内部（已经圈住的日子）也被挤了 —— spec §4.5：那里面不该动');
-      expect(warped(tester, 11), isFalse, reason: '同上（再往深一格）');
-
-      await g.up();
-      await tester.pumpAndSettle();
       await _disposeCalendar(tester);
     });
 
@@ -2225,64 +1378,6 @@ void main() {
     });
   });
 
-  // ── 当月那五样的缓存键（v0.10.20）───────────────────────────────────────
-  //
-  // `_factsFor` 把「本月统计 / 整月有没有班表在管」按一把键缓存住（这两样是每次
-  // 重建都要整月 × 链查询的大头）。**键漏一项 = 界面上静默显示旧值** —— 下面几条
-  // 各钉一头：语言、以及**排班本身**（基准日 / 周期 / 班组错位 / 按天改班）。
-  //
-  // ⚠️ 键里用的是 `chain.rotationKey` 而**不是 `chain.cacheKey`** —— 后者是「信息卡
-  // 高度」的指纹，不含按天改班。当初用错它的后果是「调过班之后这一行还是旧数字」，
-  // 这正是下面第二条用例钉住的（独立审查抓的）。
-  group('当月事实缓存', () {
-    testWidgets('调过班之后「本月统计」那一行跟着变（键里必须含排班本身）', (tester) async {
-      // ⚠️ 这一条是独立审查抓的：键原来用的是 `chain.cacheKey`，而那个是**信息卡
-      // 高度**的指纹 —— 它只看组名 / 简称 / 空白表 / 时段，**不含基准日、周期、
-      // 班组错位、按天改班的覆盖**。于是「调一次班」之后键不变 ⇒ 这一行一直显示
-      // 旧数字，而同一个界面上格子与班次行已经变了（自己打自己的脸）。
-      final AppDatabase db = await _pumpCalendar(tester, 'four_crew_three_shift');
-      final String before = tester
-          .widget<Text>(find.byKey(const Key('info-card-month-tally')))
-          .data!;
-
-      final DateTime today = dateOnly(DateTime.now());
-      final ActiveSchedules schedules =
-          (await AppRepository(db).getActiveSchedules())!;
-      final ShiftClass target = schedules.chain.scheduleOn(today)!.classes[1];
-      await AppRepository(db)
-          .setDayOverrides(<DateTime>[today], classId: target.id!);
-      await tester.pumpAndSettle();
-
-      final String after = tester
-          .widget<Text>(find.byKey(const Key('info-card-month-tally')))
-          .data!;
-      expect(after, isNot(before),
-          reason: '调过班之后这一行还是旧数字 —— 键里少了「排班本身」');
-      await _disposeCalendar(tester);
-    });
-
-    testWidgets('换语言之后「本月统计」那一行跟着换（键里必须含语言）', (tester) async {
-      await _pumpCalendar(tester, 'four_crew_three_shift');
-      expect(find.textContaining(L10n.monthTally), findsOneWidget,
-          reason: '前提：这一行本来就画出来了（不然下面比的是「都没有」）');
-
-      // ⚠️ `L10n.locale` 是模块级的，用完必须还原 —— 漏出去会把后面用例的班次名
-      // 换成英文（`_pumpCalendar` 的说明里写着这条）。还原只动 `L10n`，不碰已经
-      // 拆掉的 provider 容器（在那里读会抛「container already disposed」）。
-      addTearDown(() => L10n.locale = 'zh');
-
-      // 走 provider 换语言 —— 直接改 `L10n.locale` 不会让这一页重建。
-      final ProviderContainer container = ProviderScope.containerOf(
-          tester.element(find.byType(CalendarScreen)));
-      await container.read(appSettingsProvider.notifier).setLanguage('en');
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining(L10n.monthTally), findsOneWidget,
-          reason: '键里少了语言 —— 换到英文之后这一行还是从前的缓存值（中文）');
-      await _disposeCalendar(tester);
-    });
-
-  });
 
   // ── 这一轮的性能护栏 ─────────────────────────────────────────────────
   //

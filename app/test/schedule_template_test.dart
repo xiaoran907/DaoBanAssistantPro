@@ -72,7 +72,18 @@ void main() {
     expect(t.teamOffsets.first, 0, reason: '我们班组的错位必须是 0');
     // 原来的错位是 [0,2,4,6,8]、我们是下标 2 → 转成 [4,6,8,0,2] − 4
     expect(t.teamOffsets, [0, 2, 4, -4, -2]);
-    expect(t.cycle, [0, 0, 1, 1, 3, 2, 2, 3, 3, 3]);
+    expect(t.cycle, [
+      [0],
+      [0],
+      [1],
+      [1],
+      [3],
+      [2],
+      [2],
+      [3],
+      [3],
+      [3]
+    ]);
     expect(t.classes.map((c) => c.name),
         ['白班', '中班', '夜班', '休班']);
     expect(t.cycleLength, 10);

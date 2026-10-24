@@ -176,7 +176,13 @@ void main() {
     final saved = repo.savedTemplate;
     expect(saved, isNotNull);
     expect(saved!.name, '炼油三部 · 零点班');
-    expect(saved.cycle, [0, 0, 1, 1, 1]);
+    expect(saved.cycle, [
+      [0],
+      [0],
+      [1],
+      [1],
+      [1]
+    ]);
     expect(saved.teamCount, 5);
     expect(saved.teamOffsets, [0, 2, 4, 6, 8],
         reason: '我们班组是第 0 位，错位归零后其余按原间隔排');

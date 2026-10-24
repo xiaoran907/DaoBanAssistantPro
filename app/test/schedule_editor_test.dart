@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftassistantpro/core/design_tokens.dart';
 import 'package:shiftassistantpro/core/glass/glass.dart';
 import 'package:shiftassistantpro/core/l10n.dart';
@@ -365,7 +366,10 @@ void main() {
     // 第 1 天引用白班（08:30–20:30）
     expect(find.text('08:30 – 20:30'), findsOneWidget);
 
-    // 第 1 天的 chip 换成「夜班」（下标 1）
+    // 周期行是**多选**（一天可以挂多个班次），所以「换成别的班次」要两步：
+    // 先取消白班，再选「夜班」（下标 1）。
+    await tester.tap(find.byKey(cycleChipKey(0, 0)));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(cycleChipKey(0, 1)));
     await tester.pumpAndSettle();
 
@@ -477,7 +481,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final saved = repo.saved!;
-    expect(saved.cycle, [0, 0, 1, 1, 2, 2, 2]);
+    expect(saved.cycle, [
+      [0],
+      [0],
+      [1],
+      [1],
+      [2],
+      [2],
+      [2]
+    ]);
     expect(saved.classes.map((c) => c.name), ['白班', '夜班', '休班']);
     expect(saved.anchorDate, DateTime.utc(2025, 6, 1));
   });
@@ -793,7 +805,9 @@ void main() {
     final before = _cellLabels(tester);
     expect(before, _expectedLabels(domain));
 
-    // 第 1 天从「白班」改成「夜班」（下标 1）
+    // 第 1 天从「白班」改成「夜班」（下标 1）—— 又是「先取消、再选」
+    await tester.tap(find.byKey(cycleChipKey(0, 0)));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(cycleChipKey(0, 1)));
     await tester.pumpAndSettle();
 
@@ -961,6 +975,9 @@ void main() {
     // 两个通道都要接住：settings 是我们自己的原生通道，local_notifications
     // 是 flutter_local_notifications 的 —— 后者没接住的话 cancelAll 在测试
     // 环境里永远不会完成，后面的排定循环根本不会跑。
+    // 两处 `rescheduleAll` 的 gate 都读 prefs（`_readNavConfig` / `dndEnabled`）——
+    // 不 mock 的话 `SharedPreferences.getInstance()` 在测试里永远不返回。
+    SharedPreferences.setMockInitialValues({});
     const settings = MethodChannel('com.daoban.shiftassistantpro/settings');
     const notifications =
         MethodChannel('dexterous.com/flutter/local_notifications');
@@ -1062,8 +1079,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.saved!.classes.map((c) => c.name), ['A班', 'C班']);
-    expect(repo.saved!.cycle, [0, 1],
-        reason: 'C 的下标要从 2 前移到 1，否则周期会指向不存在的班次定义');
+    expect(repo.saved!.cycle, [
+      [0],
+      [1]
+    ], reason: 'C 的下标要从 2 前移到 1，否则周期会指向不存在的班次定义');
   });
 
   testWidgets('删仍被周期引用的班次：拦下并提示，不弹确认框', (tester) async {
@@ -1179,16 +1198,24 @@ void main() {
         tester.widget<GlassChoiceChip>(find.byKey(cycleChipKey(0, 1))).selected,
         isFalse);
 
-    // 第 1 天从「班次 0」改成「班次 2」
+    // 第 1 天再加上「班次 2」—— 周期行是多选，加一个不会把原来的顶掉
     await tester.tap(find.byKey(cycleChipKey(0, 2)));
     await tester.pumpAndSettle();
 
     expect(
         tester.widget<GlassChoiceChip>(find.byKey(cycleChipKey(0, 0))).selected,
-        isFalse);
+        isTrue,
+        reason: '多选：后点的不会把先点的取消');
     expect(
         tester.widget<GlassChoiceChip>(find.byKey(cycleChipKey(0, 2))).selected,
         isTrue);
+
+    // 再点一次同一个 = 取消它自己
+    await tester.tap(find.byKey(cycleChipKey(0, 2)));
+    await tester.pumpAndSettle();
+    expect(
+        tester.widget<GlassChoiceChip>(find.byKey(cycleChipKey(0, 2))).selected,
+        isFalse);
   });
 
   testWidgets('周期行不再有下拉控件', (tester) async {
