@@ -41,6 +41,18 @@ void showAppInfoDialog(
 }
 
 const String _changelogZh =
+'v0.13.0\n'
+    '· 新增「值班制 · 上 2 休 8」模板：一天 12 个 2 小时班、5 个班组各错开 2 小时轮着上，班次名直接就是时间段（0-2、2-4……），不再有白班夜班的说法\n'
+    '· 薪资改成按你自己填的来：月薪每个月单独填一次（每个月可能都不一样），这个月的应发 = 月薪 ＋ 加项；哪天加班或双倍工资，就在那天单独填一笔（「加项 100」一点就填上）；同一个月可以记多条实发，月中发一半、月底发一半都记得下\n'
+    '· 新增「系统日历同步」：排班自动建成系统日历里的日程（未来 60 天），可以选推到哪个日历账户；vivo 手机上若同步不成功，按页面提示去系统设置 → 权限管理 → 日历白名单里放行本应用\n'
+    '· 新增「值班自动勿扰」：每个班次开始时自动切到勿扰，班次结束时恢复\n'
+    '· 「我的」页新增「导航栏」：底栏页面可以关掉、也可以拖着排序；关掉只是隐藏，历史数据留着，也不再为它新排闹钟与重复待办\n'
+    '· 日历页去掉底部那张今日信息卡，信息都进格子：每格三行 —— 「日期 · 几岗」「班次时段」「农历」；今天那一格显示距离下一班还有多久（不到 1 小时按分钟、1 小时以上按小时，当天班都过完就回到普通显示）\n'
+    '· 排班周期里一天可以配多个班次（同一天几个时间段轮着上）\n'
+    '· 新增「云同步」：把数据备份到你的 WebDAV，换手机也能完整还原，也可以手动上传一次\n'
+    '· 农历显示可以关掉（我的 → 外观 → 显示农历），关掉之后日历格子与桌面小组件都不再显示农历\n'
+    '· 修：在排班管理里换「其余时间 / 全部日子」、增删改时段或删掉一套排班表之后，系统里已经排好的闹钟不跟着变（旧方案里的班次闹钟还按旧日子响）；全屏响铃界面的时刻改用 24 小时制；坚果云上传的 409 兼容\n'
+    '\n'
 'v0.12.3\n'
     '· 新增「薪资」：按月算出这个月的应发合计（月薪 ÷ 应出勤天 × 实出勤天），哪一天加班、出差在那一天单独加一笔；月底实际发了多少另记一笔，跟系统算出来的应发分开看\n'
     '· 日历格子的班次改成时间区间显示（08-20 这样），跨天用 22-06\n'
@@ -90,14 +102,21 @@ const String _changelogZh =
     '· 压深改成「够用就好」：以前不管原来多浅都再压掉四成，默认那颗蓝明明够亮也被压成近黑；现在只有真不够的（青、橙）才压，而且压到刚读得清就停\n'
     '· 于是胶囊、按钮、导航、开关这几处的颜色都回到了接近「我的 → 外观」里那颗主色 —— 上一版说的「实心面比主色深一档」那个代价，现在只在青和橙上还看得到\n'
     '\n'
-'v0.11.21\n'
-    '· 实心主色面换成深一档的主色：主按钮、弹窗按钮、导航选中、开关、勾选、待办那颗悬浮按钮、顶栏的实心胶囊 —— 以前白字压在原主色上，teal 只有 2.6:1、orange 2.6:1，等于读不清；现在五种主色都在 5.9:1 以上\n'
-    '· 顺带修掉一件更早就有的毛病：那层实心填充原来是半透明的（85% 到 50%），压在白底上连默认蓝的渐变尽头都只有 2.1:1\n'
-    '· 代价：实心面比「我的 → 外观」里那颗主色深一档（大致是同一个色更暗一截），字保持白\n'
-    '\n'
     ;
 
 const String _changelogEn =
+'v0.13.0\n'
+    '· New 24-hour duty template (2h on, 8h off): twelve 2-hour shifts a day spread over five crews two hours apart, and shifts are named by their time span (0-2, 2-4, ...) rather than day or night\n'
+    '· Salary is now filled in by you: set the monthly wage separately for each month (it can differ), and the month\'s payable total is that wage plus extras; overtime or double pay on a single day gets its own entry (\"Extra 100\" fills it in with one tap); a month can hold several actual-paid records, so a mid-month half and a month-end half both fit\n'
+    '· New System calendar sync: your schedule is written into the system calendar (next 60 days), and you pick which calendar account to sync to; on vivo phones, if it fails, the page tells you where to allow this app in the calendar whitelist\n'
+    '· New Automatic shift Do Not Disturb: Do Not Disturb turns on when a shift starts and off when it ends\n'
+    '· New Navigation section under Me: bottom tabs can be switched off and dragged into a new order; a hidden tab keeps its history and stops getting new alarms or recurring todos\n'
+    '· The calendar page drops the today info card below the grid and moves that information into the cells: each cell has three lines - date and shift count, shift hours, lunar date; today\'s cell counts down to the next shift (minutes under an hour, hours above it, and back to the plain display once the day\'s shifts are done)\n'
+    '· A cycle day can now hold several shifts (several time spans in one day)\n'
+    '· New Cloud sync: back up your data to your own WebDAV, restore it completely on another phone, or upload once manually\n'
+    '· The lunar date can be turned off (Me → Appearance → Show lunar calendar); with it off, neither calendar cells nor desktop widgets show it\n'
+    '· Fixes: changing the fallback schedule (All days), adding, editing or deleting a schedule period, or deleting a schedule in Schedule management left the alarms already set on the system untouched, so old night-shift alarms still rang on their old days; the full-screen ringing page now uses the 24-hour clock; and WebDAV uploads tolerate a 409 response\n'
+    '\n'
 'v0.12.3\n'
     '· New: Salary tab — monthly wage system: set a monthly wage, and the app accumulates it by working days; overtime or travel on a single day gets its own entry\n'
     '· Lunar calendar display is now optional: Me → Appearance → Show lunar calendar. When off, the lunar date disappears from calendar cells and desktop widgets\n'
@@ -146,11 +165,6 @@ const String _changelogEn =
     '· Fixed what the previous release brought in: in light mode the text on solid accent surfaces was dark, so the selected bottom-nav item and the segments on Me (theme mode / language / font size) were hard to read. They are white now\n'
     '· Darkening is now "just enough". It used to take 40% off the accent no matter how dark it already was, which crushed the default blue into near-black; now only the accents that genuinely need it (teal, orange) are darkened, and only until white text just passes\n'
     '· So pills, buttons, the nav item and switches are back near the accent you picked under Me, Appearance. The "one step darker" trade-off from the last release only shows on teal and orange now\n'
-    '\n'
-'v0.11.21\n'
-    '· Solid accent surfaces now use a one-step darker accent: primary buttons, dialog buttons, the selected nav item, switches, checkboxes, the todo floating button and the top-bar accent pills. White text on the original accent was only 2.6:1 for teal and orange — effectively unreadable; all five accents are now 5.9:1 or better\n'
-    '· Fixed a longer-standing problem on the way: that fill used to be semi-transparent (85% to 50%), which left even the default blue at 2.1:1 at the far end against a white card\n'
-    '· The trade-off: solid surfaces are one step darker than the accent shown under Me > Appearance; the text stays white\n'
     '\n'
     ;
 String get appChangelog => L10n.isEn ? _changelogEn : _changelogZh;
