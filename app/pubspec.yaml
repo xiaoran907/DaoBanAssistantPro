@@ -33,6 +33,8 @@ dependencies:
   shared_preferences: ^2.3.3
   # WebDAV 同步的密码存取：Android 走 Keystore 加密，密钥不出系统。
   flutter_secure_storage: ^9.2.4
+  # 系统日历同步（单向：App → 系统日历，D19~D24）
+  device_calendar_plus: ^0.8.1
 
   cupertino_icons: ^1.0.8
 

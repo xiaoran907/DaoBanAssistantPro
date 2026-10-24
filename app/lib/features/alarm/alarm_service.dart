@@ -7,6 +7,7 @@ import '../../core/l10n.dart';
 import '../../data/app_repository.dart';
 import '../../state/nav_settings.dart';
 import '../../domain/recurring_todo.dart';
+import '../calendar/calendar_sync_service.dart';
 import '../../domain/shift_rotation.dart';
 import '../widget/widget_service.dart';
 
@@ -959,6 +960,13 @@ class AlarmService {
     // 重复待办的提醒走独立号段，与上面那条链路互不影响（`reschedule` 里的
     // 待办那一段会跳过带 `seriesId` 的行）。
     await rescheduleRecurringReminders(await repo.listRecurringTodos());
+
+    // #6 系统日历同步：排班结构变了，同步到系统日历。
+    final calendarSyncEnabled = await _isCalendarSyncEnabled();
+    if (calendarSyncEnabled) {
+      final service = CalendarSyncService(repo);
+      await service.sync();
+    }
   }
 
   static Future<NavTabConfig> _readNavConfig() async {
@@ -968,6 +976,15 @@ class AlarmService {
       return raw != null ? NavTabConfig.fromJson(raw) : const NavTabConfig();
     } catch (_) {
       return const NavTabConfig();
+    }
+  }
+
+  static Future<bool> _isCalendarSyncEnabled() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      return sp.getBool('calendarSyncEnabled') ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

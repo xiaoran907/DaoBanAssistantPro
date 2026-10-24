@@ -5365,6 +5365,377 @@ class PayrollRecordRowsCompanion extends UpdateCompanion<PayrollRecordRow> {
   }
 }
 
+class $CalendarEventMappingRowsTable extends CalendarEventMappingRows
+    with TableInfo<$CalendarEventMappingRowsTable, CalendarEventMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CalendarEventMappingRowsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _scheduleIdMeta =
+      const VerificationMeta('scheduleId');
+  @override
+  late final GeneratedColumn<int> scheduleId = GeneratedColumn<int>(
+      'schedule_id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _classIdMeta =
+      const VerificationMeta('classId');
+  @override
+  late final GeneratedColumn<int> classId = GeneratedColumn<int>(
+      'class_id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+      'day', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _externalEventIdMeta =
+      const VerificationMeta('externalEventId');
+  @override
+  late final GeneratedColumn<String> externalEventId = GeneratedColumn<String>(
+      'external_event_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _startDateMeta =
+      const VerificationMeta('startDate');
+  @override
+  late final GeneratedColumn<DateTime> startDate = GeneratedColumn<DateTime>(
+      'start_date', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _endDateMeta =
+      const VerificationMeta('endDate');
+  @override
+  late final GeneratedColumn<DateTime> endDate = GeneratedColumn<DateTime>(
+      'end_date', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [scheduleId, classId, day, externalEventId, startDate, endDate];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'calendar_event_mapping_rows';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<CalendarEventMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('schedule_id')) {
+      context.handle(
+          _scheduleIdMeta,
+          scheduleId.isAcceptableOrUnknown(
+              data['schedule_id']!, _scheduleIdMeta));
+    } else if (isInserting) {
+      context.missing(_scheduleIdMeta);
+    }
+    if (data.containsKey('class_id')) {
+      context.handle(_classIdMeta,
+          classId.isAcceptableOrUnknown(data['class_id']!, _classIdMeta));
+    } else if (isInserting) {
+      context.missing(_classIdMeta);
+    }
+    if (data.containsKey('day')) {
+      context.handle(
+          _dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('external_event_id')) {
+      context.handle(
+          _externalEventIdMeta,
+          externalEventId.isAcceptableOrUnknown(
+              data['external_event_id']!, _externalEventIdMeta));
+    } else if (isInserting) {
+      context.missing(_externalEventIdMeta);
+    }
+    if (data.containsKey('start_date')) {
+      context.handle(_startDateMeta,
+          startDate.isAcceptableOrUnknown(data['start_date']!, _startDateMeta));
+    } else if (isInserting) {
+      context.missing(_startDateMeta);
+    }
+    if (data.containsKey('end_date')) {
+      context.handle(_endDateMeta,
+          endDate.isAcceptableOrUnknown(data['end_date']!, _endDateMeta));
+    } else if (isInserting) {
+      context.missing(_endDateMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {scheduleId, classId, day};
+  @override
+  CalendarEventMappingRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CalendarEventMappingRow(
+      scheduleId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}schedule_id'])!,
+      classId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}class_id'])!,
+      day: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}day'])!,
+      externalEventId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}external_event_id'])!,
+      startDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}start_date'])!,
+      endDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}end_date'])!,
+    );
+  }
+
+  @override
+  $CalendarEventMappingRowsTable createAlias(String alias) {
+    return $CalendarEventMappingRowsTable(attachedDatabase, alias);
+  }
+}
+
+class CalendarEventMappingRow extends DataClass
+    implements Insertable<CalendarEventMappingRow> {
+  /// 指向 `shift_schedule_rows.id`。
+  final int scheduleId;
+
+  /// 指向 `shift_class_rows.id`。
+  final int classId;
+
+  /// 纯日期自 epoch 的天数（`dayNumber()`）。
+  final int day;
+
+  /// 系统日历返回的 eventId（用于 update/delete）。
+  final String externalEventId;
+
+  /// 事件开始时间。
+  final DateTime startDate;
+
+  /// 事件结束时间。
+  final DateTime endDate;
+  const CalendarEventMappingRow(
+      {required this.scheduleId,
+      required this.classId,
+      required this.day,
+      required this.externalEventId,
+      required this.startDate,
+      required this.endDate});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['schedule_id'] = Variable<int>(scheduleId);
+    map['class_id'] = Variable<int>(classId);
+    map['day'] = Variable<int>(day);
+    map['external_event_id'] = Variable<String>(externalEventId);
+    map['start_date'] = Variable<DateTime>(startDate);
+    map['end_date'] = Variable<DateTime>(endDate);
+    return map;
+  }
+
+  CalendarEventMappingRowsCompanion toCompanion(bool nullToAbsent) {
+    return CalendarEventMappingRowsCompanion(
+      scheduleId: Value(scheduleId),
+      classId: Value(classId),
+      day: Value(day),
+      externalEventId: Value(externalEventId),
+      startDate: Value(startDate),
+      endDate: Value(endDate),
+    );
+  }
+
+  factory CalendarEventMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CalendarEventMappingRow(
+      scheduleId: serializer.fromJson<int>(json['scheduleId']),
+      classId: serializer.fromJson<int>(json['classId']),
+      day: serializer.fromJson<int>(json['day']),
+      externalEventId: serializer.fromJson<String>(json['externalEventId']),
+      startDate: serializer.fromJson<DateTime>(json['startDate']),
+      endDate: serializer.fromJson<DateTime>(json['endDate']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'scheduleId': serializer.toJson<int>(scheduleId),
+      'classId': serializer.toJson<int>(classId),
+      'day': serializer.toJson<int>(day),
+      'externalEventId': serializer.toJson<String>(externalEventId),
+      'startDate': serializer.toJson<DateTime>(startDate),
+      'endDate': serializer.toJson<DateTime>(endDate),
+    };
+  }
+
+  CalendarEventMappingRow copyWith(
+          {int? scheduleId,
+          int? classId,
+          int? day,
+          String? externalEventId,
+          DateTime? startDate,
+          DateTime? endDate}) =>
+      CalendarEventMappingRow(
+        scheduleId: scheduleId ?? this.scheduleId,
+        classId: classId ?? this.classId,
+        day: day ?? this.day,
+        externalEventId: externalEventId ?? this.externalEventId,
+        startDate: startDate ?? this.startDate,
+        endDate: endDate ?? this.endDate,
+      );
+  CalendarEventMappingRow copyWithCompanion(
+      CalendarEventMappingRowsCompanion data) {
+    return CalendarEventMappingRow(
+      scheduleId:
+          data.scheduleId.present ? data.scheduleId.value : this.scheduleId,
+      classId: data.classId.present ? data.classId.value : this.classId,
+      day: data.day.present ? data.day.value : this.day,
+      externalEventId: data.externalEventId.present
+          ? data.externalEventId.value
+          : this.externalEventId,
+      startDate: data.startDate.present ? data.startDate.value : this.startDate,
+      endDate: data.endDate.present ? data.endDate.value : this.endDate,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CalendarEventMappingRow(')
+          ..write('scheduleId: $scheduleId, ')
+          ..write('classId: $classId, ')
+          ..write('day: $day, ')
+          ..write('externalEventId: $externalEventId, ')
+          ..write('startDate: $startDate, ')
+          ..write('endDate: $endDate')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      scheduleId, classId, day, externalEventId, startDate, endDate);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CalendarEventMappingRow &&
+          other.scheduleId == this.scheduleId &&
+          other.classId == this.classId &&
+          other.day == this.day &&
+          other.externalEventId == this.externalEventId &&
+          other.startDate == this.startDate &&
+          other.endDate == this.endDate);
+}
+
+class CalendarEventMappingRowsCompanion
+    extends UpdateCompanion<CalendarEventMappingRow> {
+  final Value<int> scheduleId;
+  final Value<int> classId;
+  final Value<int> day;
+  final Value<String> externalEventId;
+  final Value<DateTime> startDate;
+  final Value<DateTime> endDate;
+  final Value<int> rowid;
+  const CalendarEventMappingRowsCompanion({
+    this.scheduleId = const Value.absent(),
+    this.classId = const Value.absent(),
+    this.day = const Value.absent(),
+    this.externalEventId = const Value.absent(),
+    this.startDate = const Value.absent(),
+    this.endDate = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CalendarEventMappingRowsCompanion.insert({
+    required int scheduleId,
+    required int classId,
+    required int day,
+    required String externalEventId,
+    required DateTime startDate,
+    required DateTime endDate,
+    this.rowid = const Value.absent(),
+  })  : scheduleId = Value(scheduleId),
+        classId = Value(classId),
+        day = Value(day),
+        externalEventId = Value(externalEventId),
+        startDate = Value(startDate),
+        endDate = Value(endDate);
+  static Insertable<CalendarEventMappingRow> custom({
+    Expression<int>? scheduleId,
+    Expression<int>? classId,
+    Expression<int>? day,
+    Expression<String>? externalEventId,
+    Expression<DateTime>? startDate,
+    Expression<DateTime>? endDate,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (scheduleId != null) 'schedule_id': scheduleId,
+      if (classId != null) 'class_id': classId,
+      if (day != null) 'day': day,
+      if (externalEventId != null) 'external_event_id': externalEventId,
+      if (startDate != null) 'start_date': startDate,
+      if (endDate != null) 'end_date': endDate,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CalendarEventMappingRowsCompanion copyWith(
+      {Value<int>? scheduleId,
+      Value<int>? classId,
+      Value<int>? day,
+      Value<String>? externalEventId,
+      Value<DateTime>? startDate,
+      Value<DateTime>? endDate,
+      Value<int>? rowid}) {
+    return CalendarEventMappingRowsCompanion(
+      scheduleId: scheduleId ?? this.scheduleId,
+      classId: classId ?? this.classId,
+      day: day ?? this.day,
+      externalEventId: externalEventId ?? this.externalEventId,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (scheduleId.present) {
+      map['schedule_id'] = Variable<int>(scheduleId.value);
+    }
+    if (classId.present) {
+      map['class_id'] = Variable<int>(classId.value);
+    }
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (externalEventId.present) {
+      map['external_event_id'] = Variable<String>(externalEventId.value);
+    }
+    if (startDate.present) {
+      map['start_date'] = Variable<DateTime>(startDate.value);
+    }
+    if (endDate.present) {
+      map['end_date'] = Variable<DateTime>(endDate.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CalendarEventMappingRowsCompanion(')
+          ..write('scheduleId: $scheduleId, ')
+          ..write('classId: $classId, ')
+          ..write('day: $day, ')
+          ..write('externalEventId: $externalEventId, ')
+          ..write('startDate: $startDate, ')
+          ..write('endDate: $endDate, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -5393,6 +5764,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $PayrollMonthlyRowsTable(this);
   late final $PayrollRecordRowsTable payrollRecordRows =
       $PayrollRecordRowsTable(this);
+  late final $CalendarEventMappingRowsTable calendarEventMappingRows =
+      $CalendarEventMappingRowsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5412,7 +5785,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         recurringSeriesRows,
         payrollDayRows,
         payrollMonthlyRows,
-        payrollRecordRows
+        payrollRecordRows,
+        calendarEventMappingRows
       ];
 }
 
@@ -8246,6 +8620,203 @@ typedef $$PayrollRecordRowsTableProcessedTableManager = ProcessedTableManager<
     ),
     PayrollRecordRow,
     PrefetchHooks Function()>;
+typedef $$CalendarEventMappingRowsTableCreateCompanionBuilder
+    = CalendarEventMappingRowsCompanion Function({
+  required int scheduleId,
+  required int classId,
+  required int day,
+  required String externalEventId,
+  required DateTime startDate,
+  required DateTime endDate,
+  Value<int> rowid,
+});
+typedef $$CalendarEventMappingRowsTableUpdateCompanionBuilder
+    = CalendarEventMappingRowsCompanion Function({
+  Value<int> scheduleId,
+  Value<int> classId,
+  Value<int> day,
+  Value<String> externalEventId,
+  Value<DateTime> startDate,
+  Value<DateTime> endDate,
+  Value<int> rowid,
+});
+
+class $$CalendarEventMappingRowsTableFilterComposer
+    extends Composer<_$AppDatabase, $CalendarEventMappingRowsTable> {
+  $$CalendarEventMappingRowsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get scheduleId => $composableBuilder(
+      column: $table.scheduleId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get classId => $composableBuilder(
+      column: $table.classId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get externalEventId => $composableBuilder(
+      column: $table.externalEventId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get startDate => $composableBuilder(
+      column: $table.startDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get endDate => $composableBuilder(
+      column: $table.endDate, builder: (column) => ColumnFilters(column));
+}
+
+class $$CalendarEventMappingRowsTableOrderingComposer
+    extends Composer<_$AppDatabase, $CalendarEventMappingRowsTable> {
+  $$CalendarEventMappingRowsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get scheduleId => $composableBuilder(
+      column: $table.scheduleId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get classId => $composableBuilder(
+      column: $table.classId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get externalEventId => $composableBuilder(
+      column: $table.externalEventId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get startDate => $composableBuilder(
+      column: $table.startDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get endDate => $composableBuilder(
+      column: $table.endDate, builder: (column) => ColumnOrderings(column));
+}
+
+class $$CalendarEventMappingRowsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CalendarEventMappingRowsTable> {
+  $$CalendarEventMappingRowsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get scheduleId => $composableBuilder(
+      column: $table.scheduleId, builder: (column) => column);
+
+  GeneratedColumn<int> get classId =>
+      $composableBuilder(column: $table.classId, builder: (column) => column);
+
+  GeneratedColumn<int> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<String> get externalEventId => $composableBuilder(
+      column: $table.externalEventId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get startDate =>
+      $composableBuilder(column: $table.startDate, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get endDate =>
+      $composableBuilder(column: $table.endDate, builder: (column) => column);
+}
+
+class $$CalendarEventMappingRowsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $CalendarEventMappingRowsTable,
+    CalendarEventMappingRow,
+    $$CalendarEventMappingRowsTableFilterComposer,
+    $$CalendarEventMappingRowsTableOrderingComposer,
+    $$CalendarEventMappingRowsTableAnnotationComposer,
+    $$CalendarEventMappingRowsTableCreateCompanionBuilder,
+    $$CalendarEventMappingRowsTableUpdateCompanionBuilder,
+    (
+      CalendarEventMappingRow,
+      BaseReferences<_$AppDatabase, $CalendarEventMappingRowsTable,
+          CalendarEventMappingRow>
+    ),
+    CalendarEventMappingRow,
+    PrefetchHooks Function()> {
+  $$CalendarEventMappingRowsTableTableManager(
+      _$AppDatabase db, $CalendarEventMappingRowsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CalendarEventMappingRowsTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CalendarEventMappingRowsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CalendarEventMappingRowsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> scheduleId = const Value.absent(),
+            Value<int> classId = const Value.absent(),
+            Value<int> day = const Value.absent(),
+            Value<String> externalEventId = const Value.absent(),
+            Value<DateTime> startDate = const Value.absent(),
+            Value<DateTime> endDate = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CalendarEventMappingRowsCompanion(
+            scheduleId: scheduleId,
+            classId: classId,
+            day: day,
+            externalEventId: externalEventId,
+            startDate: startDate,
+            endDate: endDate,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int scheduleId,
+            required int classId,
+            required int day,
+            required String externalEventId,
+            required DateTime startDate,
+            required DateTime endDate,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CalendarEventMappingRowsCompanion.insert(
+            scheduleId: scheduleId,
+            classId: classId,
+            day: day,
+            externalEventId: externalEventId,
+            startDate: startDate,
+            endDate: endDate,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$CalendarEventMappingRowsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$AppDatabase,
+        $CalendarEventMappingRowsTable,
+        CalendarEventMappingRow,
+        $$CalendarEventMappingRowsTableFilterComposer,
+        $$CalendarEventMappingRowsTableOrderingComposer,
+        $$CalendarEventMappingRowsTableAnnotationComposer,
+        $$CalendarEventMappingRowsTableCreateCompanionBuilder,
+        $$CalendarEventMappingRowsTableUpdateCompanionBuilder,
+        (
+          CalendarEventMappingRow,
+          BaseReferences<_$AppDatabase, $CalendarEventMappingRowsTable,
+              CalendarEventMappingRow>
+        ),
+        CalendarEventMappingRow,
+        PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8281,4 +8852,7 @@ class $AppDatabaseManager {
       $$PayrollMonthlyRowsTableTableManager(_db, _db.payrollMonthlyRows);
   $$PayrollRecordRowsTableTableManager get payrollRecordRows =>
       $$PayrollRecordRowsTableTableManager(_db, _db.payrollRecordRows);
+  $$CalendarEventMappingRowsTableTableManager get calendarEventMappingRows =>
+      $$CalendarEventMappingRowsTableTableManager(
+          _db, _db.calendarEventMappingRows);
 }

@@ -1485,6 +1485,54 @@ class AppRepository {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // 系统日历同步映射（#6）
+  // ---------------------------------------------------------------------------
+
+  /// 获取全部日历事件映射。
+  Future<List<CalendarEventMappingRow>> getCalendarEventMappings() {
+    return db.select(db.calendarEventMappingRows).get();
+  }
+
+  /// 保存或更新一条日历事件映射（复合主键 `{scheduleId, classId, day}`）。
+  Future<void> saveCalendarEventMapping({
+    required int scheduleId,
+    required int classId,
+    required int day,
+    required String externalEventId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    // 先删旧的（如果有），再插入新的。
+    await (db.delete(db.calendarEventMappingRows)
+          ..where((t) =>
+              t.scheduleId.equals(scheduleId) &
+              t.classId.equals(classId) &
+              t.day.equals(day)))
+        .go();
+    await db.into(db.calendarEventMappingRows).insert(
+      CalendarEventMappingRowsCompanion.insert(
+        scheduleId: scheduleId,
+        classId: classId,
+        day: day,
+        externalEventId: externalEventId,
+        startDate: startDate,
+        endDate: endDate,
+      ),
+    );
+  }
+
+  /// 删除一条日历事件映射。
+  Future<void> deleteCalendarEventMapping(
+      int scheduleId, int classId, int day) {
+    return (db.delete(db.calendarEventMappingRows)
+          ..where((t) =>
+              t.scheduleId.equals(scheduleId) &
+              t.classId.equals(classId) &
+              t.day.equals(day)))
+        .go();
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +29,7 @@ import '../../state/app_settings.dart';
 import '../../state/nav_settings.dart';
 import '../alarm/alarm_service.dart';
 import '../calendar/schedule_management_screen.dart';
+import '../calendar/calendar_sync_service.dart';
 import 'app_dialogs.dart';
 import 'help_center_screen.dart';
 import 'webdav_sync_screen.dart';
@@ -343,6 +346,9 @@ class ProfileScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            SectionHeading(L10n.calendarSync),
+            const _CalendarSyncCard(),
             const SizedBox(height: 16),
             SectionHeading(L10n.sectionPermission),
             const _PermissionCheck(),
@@ -1233,6 +1239,197 @@ class _NavTabRow extends ConsumerWidget {
                   .setEnabled(id, v);
             },
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 系统日历同步卡片：开关 + 选择日历 + 同步按钮。
+class _CalendarSyncCard extends ConsumerStatefulWidget {
+  const _CalendarSyncCard();
+
+  @override
+  ConsumerState<_CalendarSyncCard> createState() =>
+      _CalendarSyncCardState();
+}
+
+class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
+  bool _enabled = false;
+  String? _calendarId;
+  String? _calendarName;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final sp = await SharedPreferences.getInstance();
+    final enabled = sp.getBool('calendarSyncEnabled') ?? false;
+    final calendarId = sp.getString('calendarSyncCalendarId');
+    setState(() {
+      _enabled = enabled;
+      _calendarId = calendarId;
+    });
+  }
+
+  Future<void> _toggleEnabled(bool v) async {
+    setState(() => _enabled = v);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool('calendarSyncEnabled', v);
+    if (v && _calendarId == null) {
+      await _pickCalendar();
+    }
+  }
+
+  Future<void> _pickCalendar() async {
+    final repo = ref.read(appRepositoryProvider);
+    final service = CalendarSyncService(repo);
+    final calendars = await service.listCalendars();
+    if (!mounted) return;
+
+    if (calendars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L10n.calendarSyncNoPermission)),
+      );
+      return;
+    }
+
+    await showGlassDialog<String?>(
+      context: context,
+      builder: (dialogContext) => GlassDialog(
+        title: L10n.calendarSyncPickCalendar,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(L10n.calendarSyncPickCalendarHint,
+                style: AppTokens.rowSecondary),
+            const SizedBox(height: 16),
+            for (final cal in calendars)
+              GlassPressable(
+                child: ListTile(
+                  leading: Icon(Icons.calendar_today_outlined),
+                  title: Text(cal.name),
+                  onTap: () => Navigator.pop(dialogContext, cal.id),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          GlassActionButton(
+            onPressed: () => Navigator.pop(dialogContext, null),
+            label: L10n.cancel,
+          ),
+        ],
+      ),
+    ).then((calendarId) {
+      if (calendarId != null && mounted) {
+        setState(() {
+          _calendarId = calendarId;
+          _calendarName = calendars
+              .firstWhere((c) => c.id == calendarId, orElse: () => calendars.first)
+              .name;
+        });
+        service.saveCalendarId(calendarId);
+      }
+    });
+  }
+
+  Future<void> _syncNow() async {
+    if (!mounted) return;
+    if (_calendarId == null) {
+      await _pickCalendar();
+      return;
+    }
+    setState(() => _syncing = true);
+    final repo = ref.read(appRepositoryProvider);
+    final service = CalendarSyncService(repo);
+    try {
+      await service.sync();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(L10n.calendarSyncDone)),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(L10n.calendarSyncFailed)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassTile(
+      translucentFill: false,
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined,
+                    size: AppTokens.iconMd),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(L10n.calendarSync, style: AppTokens.labelStrong),
+                      const SizedBox(height: 2),
+                      Text(L10n.calendarSyncSubtitle,
+                          style: AppTokens.rowSecondary),
+                    ],
+                  ),
+                ),
+                GlassSwitch(
+                  value: _enabled,
+                  onChanged: _toggleEnabled,
+                ),
+              ],
+            ),
+          ),
+          if (_enabled) ...[
+            const Divider(height: 1),
+            GlassPressable(
+              child: ListTile(
+                leading: const Icon(Icons.calendar_view_day_outlined),
+                title: Text(_calendarName ?? L10n.calendarSyncPickCalendar),
+                trailing: const Icon(Icons.chevron_right_outlined),
+                onTap: _pickCalendar,
+              ),
+            ),
+            const Divider(height: 1),
+            GlassPressable(
+              child: ListTile(
+                leading: _syncing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_outlined),
+                title: Text(L10n.calendarSyncSyncing),
+                onTap: _syncing ? null : _syncNow,
+              ),
+            ),
+            if (L10n.isEn || Platform.isAndroid) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(L10n.calendarSyncVivoHint,
+                    style: AppTokens.rowSecondary),
+              ),
+            ],
+          ],
         ],
       ),
     );

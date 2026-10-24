@@ -360,6 +360,38 @@ class PayrollRecordRows extends Table {
   Set<Column> get primaryKey => {year, month, seq};
 }
 
+/// 系统日历事件映射表（#6 系统日历同步）。
+///
+/// 存储 App 内部班次与系统日历事件的对应关系，用于幂等更新：
+/// - 已有映射 → updateEvent
+/// - 无映射 → createEvent
+/// - 已删除班次 → deleteEvent
+///
+/// 复合主键 `{scheduleId, classId, day}`：同一套方案的同一班次在同一天只有一条记录。
+/// **不设自增 id**：复合主键已唯一标识一行，不需要额外自增列。
+class CalendarEventMappingRows extends Table {
+  /// 指向 `shift_schedule_rows.id`。
+  IntColumn get scheduleId => integer()();
+
+  /// 指向 `shift_class_rows.id`。
+  IntColumn get classId => integer()();
+
+  /// 纯日期自 epoch 的天数（`dayNumber()`）。
+  IntColumn get day => integer()();
+
+  /// 系统日历返回的 eventId（用于 update/delete）。
+  TextColumn get externalEventId => text()();
+
+  /// 事件开始时间。
+  DateTimeColumn get startDate => dateTime()();
+
+  /// 事件结束时间。
+  DateTimeColumn get endDate => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {scheduleId, classId, day};
+}
+
 @DriftDatabase(tables: [
   ShiftScheduleRows,
   ScheduleSpanRows,
@@ -376,6 +408,7 @@ class PayrollRecordRows extends Table {
   PayrollDayRows,
   PayrollMonthlyRows,
   PayrollRecordRows,
+  CalendarEventMappingRows,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(name: 'shiftassistantpro'));
@@ -384,12 +417,16 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
+          if (from < 19) {
+            // v0.13 #6：系统日历同步映射表。
+            await m.createTable(calendarEventMappingRows);
+          }
           if (from < 18) {
             // v0.13：撤销 v17 的全局月薪（包月制），改成「逐月灵活填」。
             //

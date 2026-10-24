@@ -1274,4 +1274,24 @@ class L10n {
   static String importVersionTooNew(String version) => t(
       '这个备份来自更新的应用版本（$version）',
       'This backup comes from a newer app version ($version)');
+
+  // 系统日历同步
+  static String get calendarSync => t('系统日历同步', 'System calendar sync');
+  static String get calendarSyncSubtitle => t(
+      '排班自动同步到系统日历（未来 60 天）',
+      'Sync schedule to system calendar (next 60 days)');
+  static String get calendarSyncPickCalendar => t(
+      '选择日历', 'Select calendar');
+  static String get calendarSyncPickCalendarHint => t(
+      '选择要同步的日历账户', 'Select the calendar account to sync to');
+  static String get calendarSyncNoPermission => t(
+      '需要日历权限才能同步', 'Calendar permission required to sync');
+  static String get calendarSyncVivoHint => t(
+      'vivo 手机：若同步不成功，请到系统设置 → 权限管理 → 日历白名单里允许本应用',
+      'vivo: If sync fails, go to Settings → Permissions → Calendar whitelist and allow this app');
+  static String get calendarSyncSyncing => t('正在同步...', 'Syncing...');
+  static String get calendarSyncDone => t('已同步', 'Synced');
+  static String get calendarSyncFailed => t('同步失败', 'Sync failed');
+  static String get calendarSyncNotConfigured => t(
+      '请先选择日历', 'Please select a calendar first');
 }
