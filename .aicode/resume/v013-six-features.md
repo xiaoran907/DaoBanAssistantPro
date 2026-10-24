@@ -3,9 +3,17 @@ status: in_progress
 task: v0.13 收尾：#6 系统日历同步完善 + 值班自动勿扰 + 129 条测试红修复 + 0.13.0+180 发布
 slug: v013-six-features
 started: 2026-10-24T10:00:00Z
-updated: 2026-10-25T00:00:00Z
-next: ③ chore(release) 待提交 → tag v0.13.0 + push origin beta + release.ps1 -SkipConfirm + curl 核对 main 上的 latest.json（逐项等用户确认）
+updated: 2026-10-25T00:30:00Z
+next: 远端动作在容器里做不了（无外网 / 无 pwsh+gh / 无 key.properties）→ 用户在自己的 Windows 机上执行命令清单（push beta → push main → push tag → release.ps1 -SkipConfirm → curl 核对 main 上的 latest.json）
 ---
+
+## 发布状态（2026-10-25，本地已就绪，未推）
+- 分支：beta（HEAD = 9359253 + 一条存档 chore）；main = **a7cd679**（`--no-ff` 合并 beta，latest.json 冲突取 main 侧，两侧只差 updatedAt）；**tag `v0.13.0` 已打在该合并提交上（本地，未 push）**；`git diff --stat beta main` 仅 latest.json 一行差异
+- 旧 tag 是轻量 tag（`v0.12.1` 直接指 beta 提交），所以 v0.13.0 也照轻量打；现存 tag 最新为 v0.13.0 > v0.12.1（v0.12.2/0.12.3/0.12.4 从未打过 tag）
+- 容器做不了的部分：`pwsh`/`gh` 缺失（release.ps1 跑不了）、`app/android/key.properties` 缺失（出不了正式签名 APK）、**容器无外网**（github.com DNS 能解、TCP 超时，`git ls-remote` 30s 超时）
+- 命令清单（用户在 Windows 仓库里跑）：`git push origin beta` → `git checkout main && git push origin main` → `git push origin v0.13.0` → `scripts/release.ps1 -SkipConfirm` → `curl -s https://raw.githubusercontent.com/.../main/latest.json` 核对 stable=0.13.0
+- ⚠️ **用户拍板（2026-10-25）**：#1「切换页面卡顿」与 D39（桌面小组件月历卡消费快照 v3 的 shifts）**都不进 v0.13.0**，留到 0.13.1
+- ⚠️ 插队任务「日历格子可读性」原定 0.12.5+180，而本流已发 0.13.0 —— **动手前必须与用户重定版本号与发布顺序**（大概率 0.13.1+181）
 
 ## 进度（2026-10-25，本会话）
 - ✅ 全量测试 `/tmp/test-full4.log`：**1147 通过 / 3 失败**（上一轮基线 test-full3.log 1145/5）；剩 3 条即容器缺字体的预存失败（label_value_row「编辑器的字段标签与值 · 320dp 特大 · en」、list_subtitle_fit「待办副标题折两行，不省略」en+zh），**不是回归，勿为它改判据**
@@ -13,13 +21,13 @@ next: ③ chore(release) 待提交 → tag v0.13.0 + push origin beta + release.
 - ✅ 发布收尾：`pubspec.yaml` 0.13.0+180、`app_info.dart` '0.13.0'、`app_dialogs.dart` 中英各 prepend v0.13.0 归纳条目（删最旧 v0.11.21、窗口 10 条、无 markdown）；`changelog_window_test` + `app_info_test` 6/6 绿
 - ✅ 提交（beta 分支，用户 2026-10-25 说「可以」）：① `00e520b feat(v0.13): #6 系统日历同步收尾 + 值班自动勿扰`（勿扰与 #6 合并为一条，因 l10n/profile/Manifest 三文件两件事共用）；② `af3a222 fix(v0.13): 多时段排班收尾 + 日历页死码清理 + 测试适配`（app_repository 的 extraSegments 落库必须跟 ① 走，否则 ① 编译不过 —— 它调用了新签名的映射方法）
 - ✅ `app/android/build/reports/problems/problems-report.html` 已 `git checkout --` 还原，不进任何提交
-- ⏳ ③ chore(release) 待提：pubspec / app_info / app_dialogs / docs/decisions-v0.13-roadmap.md / 本存档
+- ⏳ ③ `9359253 chore(release): v0.13.0+180`：pubspec / app_info / app_dialogs / docs/decisions-v0.13-roadmap.md / 本存档
 - ⚠️ 未跟踪的 `.aicode/attachments/`、`gateway_connect_test.py` 属别的来源，**不提交**
 - ⏳ 等用户拍板：tag/push/发布脚本那一步
 
-## 未决范围（等用户）
-- #1「切换页面卡顿」本轮未做（roadmap D32 只定诊断路径）→ 放 0.13.0 还是下一版？
-- D39 未落：小组件月历卡还没消费快照 v3 的 `shifts`（Kotlin 渲染侧未动，每格仍单颗胶囊）→ 算进本轮收尾吗？
+## 未决范围（已拍板 2026-10-25）
+- ~~#1「切换页面卡顿」~~ → **不进本版**，留 0.13.1
+- ~~D39 小组件月历卡多胶囊~~ → **不进本版**，留 0.13.1
 
 # 插队任务（2026-10-24 定，用户拍板 Q9=A）：日历格子可读性，单独发 0.12.5+180
 > ⚠️ **状态：暂停中（2026-10-24 16:5x）**。发现并行会话正在做 v0.13 收尾（勿扰全套 + #6 六缺陷 + 两个新测试，13:56~16:49 未提交，还删了 `calendar_screen.dart` 491 行死代码）；用户拍板**等那条流提交后再动手**，避免两线互踩。动手前重新核实：基线行数、存留符号、版本号（那条流收尾目标是 0.13.0+180，若它先发了，本任务的版本号与发布顺序重新与用户确认）。
