@@ -46,6 +46,8 @@ const _roleAbbr = <ShiftRole, L10nText>{
 };
 
 /// 班次原型：模板的结构部分。名称与简称由 [role] 按当前语言生成。
+///
+/// 如果提供了 [name] 和 [abbr]，则优先使用它们（用于时间名等自定义场景）。
 class ShiftClassProto {
   const ShiftClassProto({
     required this.role,
@@ -55,6 +57,8 @@ class ShiftClassProto {
     required this.color,
     this.alarmEnabled = false,
     this.alarms = const [],
+    this.name,
+    this.abbr,
   });
 
   final ShiftRole role;
@@ -67,9 +71,15 @@ class ShiftClassProto {
   /// 这个班次的联动闹钟（内置模板每个都是一条，钟点与从前逐个一致）。
   final List<ShiftAlarm> alarms;
 
+  /// 自定义班次名（优先于 role 生成的名称）。
+  final String? name;
+
+  /// 自定义简称（优先于 role 生成的简称）。
+  final String? abbr;
+
   ShiftClass toClass() => ShiftClass(
-        name: _roleName[role]!.value,
-        abbr: _roleAbbr[role]!.value,
+        name: name ?? _roleName[role]!.value,
+        abbr: abbr ?? _roleAbbr[role]!.value,
         startMinute: startMinute,
         endMinute: endMinute,
         isRest: isRest,
@@ -397,6 +407,32 @@ const List<ShiftTemplateSpec> shiftTemplateSpecs = [
     cycle: [0, 1, 1, 1],
     teamCount: 4,
     teamOffsets: [0, 1, 2, 3],
+  ),
+
+  // -------- 2h 值班制 --------
+  ShiftTemplateSpec(
+    id: 'duty_2_8',
+    title: L10nText('值班2小时休8小时，五班组错开', '2h duty, 8h rest, 5 crews staggered'),
+    subtitle: L10nText('上2休8 · 五班组', '2h on, 8h off · 5-crew'),
+    aliases: ['上2休8', '2h on 8h off', '2小时', '值班', 'duty 2 8', '5-crew'],
+    groupKey: 'duty',
+    classes: [
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 0, endMinute: 120, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 1410)], name: '0-2', abbr: '0-2'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 120, endMinute: 240, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 90)], name: '2-4', abbr: '2-4'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 240, endMinute: 360, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 210)], name: '4-6', abbr: '4-6'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 360, endMinute: 480, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 330)], name: '6-8', abbr: '6-8'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 480, endMinute: 600, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 450)], name: '8-10', abbr: '8-10'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 600, endMinute: 720, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 570)], name: '10-12', abbr: '10-12'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 720, endMinute: 840, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 690)], name: '12-14', abbr: '12-14'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 840, endMinute: 960, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 810)], name: '14-16', abbr: '14-16'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 960, endMinute: 1080, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 930)], name: '16-18', abbr: '16-18'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 1080, endMinute: 1200, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 1050)], name: '18-20', abbr: '18-20'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 1200, endMinute: 1320, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 1170)], name: '20-22', abbr: '20-22'),
+      ShiftClassProto(role: ShiftRole.duty, startMinute: 1320, endMinute: 1440, color: 0xFFFF375F, alarmEnabled: true, alarms: [ShiftAlarm(minute: 1290)], name: '22-24', abbr: '22-24'),
+    ],
+    cycle: [0, 1, 2, 3, 4],
+    teamCount: 5,
+    teamOffsets: [0, 1, 2, 3, 4],
   ),
 
   // -------- 常白 --------
