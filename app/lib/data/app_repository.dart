@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -192,10 +193,26 @@ extension RecurringSeriesRowX on RecurringSeriesRow {
         advanceRemindMinutes: advanceRemindMinutes,
         alarmEnabled: alarmEnabled,
         weekdays: weekdays,
-        monthDay: monthDay,
+        monthDays: monthDays,
+        shiftNames: _decodeShiftNames(shiftNames),
         skipThrough: skipThrough,
         enabled: enabled,
       );
+}
+
+/// `shift_names` 列（JSON 数组）→ 名字列表。空 / 坏数据一律当「没选」。
+///
+/// **坏数据不崩**：这一列只在界面上写，但数据库是用户自己的，手改坏了不该让整个
+/// 待办页打不开。
+List<String> _decodeShiftNames(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const [];
+  try {
+    final v = jsonDecode(raw);
+    if (v is! List) return const [];
+    return [for (final x in v) if (x is String) x];
+  } catch (_) {
+    return const [];
+  }
 }
 
 extension AppDatabaseQueries on AppDatabase {
@@ -1150,7 +1167,8 @@ class AppRepository {
     int? advanceRemindMinutes,
     bool alarmEnabled = false,
     int weekdays = 0,
-    int monthDay = 1,
+    int monthDays = 1,
+    List<String> shiftNames = const [],
   }) {
     return db.into(db.recurringSeriesRows).insert(
           RecurringSeriesRowsCompanion.insert(
@@ -1161,7 +1179,9 @@ class AppRepository {
             advanceRemindMinutes: Value(advanceRemindMinutes),
             alarmEnabled: Value(alarmEnabled),
             weekdays: Value(weekdays),
-            monthDay: Value(monthDay),
+            monthDays: Value(monthDays),
+            shiftNames:
+                Value(shiftNames.isEmpty ? null : jsonEncode(shiftNames)),
             enabled: const Value(true),
             createdAt: DateTime.now(),
           ),
@@ -1183,7 +1203,9 @@ class AppRepository {
       advanceRemindMinutes: Value(s.advanceRemindMinutes),
       alarmEnabled: Value(s.alarmEnabled),
       weekdays: Value(s.weekdays),
-      monthDay: Value(s.monthDay),
+      monthDays: Value(s.monthDays),
+      shiftNames:
+          Value(s.shiftNames.isEmpty ? null : jsonEncode(s.shiftNames)),
       skipThrough: Value(s.skipThrough),
       enabled: Value(s.enabled),
     ));
@@ -1269,6 +1291,11 @@ class AppRepository {
     final raw = sp.getString('navConfig');
     final navConfig = raw != null ? NavTabConfig.fromJson(raw) : const NavTabConfig();
     if (!navConfig.isTodoEnabled) return;
+
+    // 按班次规则要问「那一天我们班组上什么班」—— 走整条链（含按天调班）。
+    // 读在事务外：装配要做好几次查询，没必要把写事务撑大。
+    final schedules = await getActiveSchedules();
+    final ShiftNameResolver? shiftNameOn = schedules?.chain.shiftNamesOn;
     await db.transaction(() async {
       final series = await listRecurringTodos();
       final rows = await listEvents();
@@ -1277,7 +1304,7 @@ class AppRepository {
         // 替他删掉他就再也看不见了。
         if (!s.enabled) continue;
 
-        final occ = occurrenceOnOrBefore(s, today);
+        final occ = occurrenceOnOrBefore(s, today, shiftNameOn: shiftNameOn);
         if (occ == null) continue; // 还没到起始日
         // 「这次不要了」：跳过标记与 occurrence 都是「自 epoch 天数」。
         // 直接拿 DateTime 比 int 是拿毫秒去比天数，恒不成立 —— 那正是「删了又回来」。
@@ -1601,18 +1628,30 @@ final eventsProvider = StreamProvider<List<ScheduleEvent>>((ref) {
   return db.watchEvents();
 });
 
-/// 全部重复待办（系列定义）。管理面板用它。
+/// 重复待办面板一次性要的两样：全部系列 + 当前排班链。
 ///
 /// **一次性读 + `autoDispose`**，不是流 —— 与 `savedTemplatesProvider` 同一套
 /// 理由与坑：
 ///  - 用流的话，每条挂这个弹窗的 widget 用例都会在拆树时报
 ///    「A Timer is still pending」（drift 取消查询流时排的零时长定时器）；
-///  - 而 `autoDispose` 是**必需**的：面板里改完 / 删完之后由调用点
+///  - `autoDispose` 是**必需**的：面板里改完 / 删完之后由调用点
 ///    `ref.invalidate` 重读，不 autoDispose 的话第一次读到的结果会被缓存一整个
-///    会话（v0.8.11 那个「存完模板看不到」就是这么来的）。
-final recurringTodosProvider =
-    FutureProvider.autoDispose<List<RecurringTodo>>((ref) {
-  return ref.watch(appRepositoryProvider).listRecurringTodos();
+///    会话（v0.8.11 那个「存完模板看不到」就是这么来的）；
+///  - 也**不 watch `activeScheduleProvider`**：同上，流取消时的零时长定时器会
+///    让弹窗用例报错。
+class RecurringPanelData {
+  const RecurringPanelData({required this.series, this.chain});
+
+  final List<RecurringTodo> series;
+  final ScheduleChain? chain;
+}
+
+final recurringPanelProvider =
+    FutureProvider.autoDispose<RecurringPanelData>((ref) async {
+  final repo = ref.watch(appRepositoryProvider);
+  final series = await repo.listRecurringTodos();
+  final active = await repo.getActiveSchedules();
+  return RecurringPanelData(series: series, chain: active?.chain);
 });
 
 /// 一条日程是不是「属于 [day] 且未完成」。

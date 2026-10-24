@@ -209,7 +209,9 @@ class ScheduleManagementScreen extends ConsumerWidget {
   }
 }
 
-/// 排班结构一变，「今天归哪套」跟着变 —— 日历立刻跟上，**原生闹钟不会**。
+/// 排班结构一变，「今天归哪套」跟着变 —— 日历立刻跟上，**原生闹钟与按班次的
+/// 重复待办都不会**。所以这里不是只重排闹钟：先让生成器把按班次的「当前这一次」
+/// 对齐，再整链重排（`AlarmService.replanAfterScheduleChange`）。
 ///
 /// 换「其余时间」归属、增删改排班时段、删掉一套方案，都会让未来几十天里某些天的
 /// 班次换成另一套（甚至换成「无」）。不重排闹钟的话，**旧计划里的班次闹钟照旧
@@ -220,7 +222,7 @@ class ScheduleManagementScreen extends ConsumerWidget {
 /// 与「编辑排班页保存」「日历调整班次」两条路保持一致：写库之后立刻整链重排。
 /// 调用点都在**关窗之后**——那串原生调用真机上要几百毫秒，别让弹层陪着卡。
 Future<void> _replanAlarms(WidgetRef ref) =>
-    AlarmService.rescheduleAll(ref.read(appRepositoryProvider));
+    AlarmService.replanAfterScheduleChange(ref.read(appRepositoryProvider));
 
 /// 排班管理页顶部那一节「排班时段」。
 ///

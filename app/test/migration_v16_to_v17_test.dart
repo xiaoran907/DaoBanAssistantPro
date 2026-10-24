@@ -1,13 +1,16 @@
 // app/test/migration_v16_to_v17_test.dart
 //
-// v16 → v17：薪资模型改包月制。`payroll_settings_rows` 删 `daily_wage` /
-// `daily_subsidy` 两列、加 `monthly_wage` 一列（表直接重建）；
-// `payroll_day_rows` 清空（语义从「替换日薪」变「加项」，旧数据留下来会算飞）；
-// `payroll_record_rows`（实发记录）不动。
+// v16 → 最新（中间跨了 v17 的「薪资表建出」、v19 的「逐月月薪」与 v20 的
+// 「日历映射表」）。本文件盯的是**长链升级时薪资数据怎么走**：
+//
+//  ① 月薪表 `payroll_monthly_rows` 建出来，而旧的 `payroll_settings_rows`
+//     不再存在 —— 库里若还留着它（v0.13 开发线在 17 / 18 上建过），这一趟必须清掉；
+//  ② 单日加项表 `payroll_day_rows` 语义不变（从「替换日薪」变成「在月薪之外
+//     加一笔」），**旧数据留着**；
+//  ③ 实发记录 `payroll_record_rows` 不动（从 v16 升上来不经过它那次主键改造）。
 //
 // 验法：按当前 schema 建库 → 模拟 v16（拨回版本号 + 建回旧 schema 的
-// payroll_settings_rows + 灌旧数据）→ 重开跑迁移 → 断言新列在、旧列没了、
-// 单日加项表清空、实发记录原样。
+// payroll_settings_rows + 灌旧数据）→ 重开跑迁移 → 断言上三条。
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -16,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftassistantpro/data/app_database.dart';
 
 void main() {
-  test('v16 → v17：月薪列建出、旧列删掉、加项表清空、实发记录不动', () async {
+  test('v16 → 最新：月薪表建出、旧 settings 表删掉、加项与实发记录不动', () async {
     final dir = await Directory.systemTemp.createTemp('migration_v17');
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/db.sqlite');
@@ -24,7 +27,7 @@ void main() {
     // ① 按当前 schema 建库。
     final first = AppDatabase.forTesting(NativeDatabase(file));
     await first.customSelect('SELECT 1').getSingle();
-    expect(first.schemaVersion, 19);
+    expect(first.schemaVersion, 20);
 
     // ② 模拟 v16：拨回版本号，把 payroll_settings_rows 换成旧 schema
     //   （daily_wage / daily_subsidy），灌一条旧数据；再往单日加项表灌一条。
@@ -57,10 +60,10 @@ void main() {
         );
     await first.close();
 
-    // ③ 重开：drift 看到 user_version = 16 → 跑 from < 17 分支。
+    // ③ 重开：drift 看到 user_version = 16 → 跑 from < 17 起的各段。
     final reopened = AppDatabase.forTesting(NativeDatabase(file));
     addTearDown(reopened.close);
-    expect(reopened.schemaVersion, 19);
+    expect(reopened.schemaVersion, 20);
 
     // ④ 新表 schema：有 wage，没有 monthly_wage / daily_wage / daily_subsidy。
     final cols = await reopened
@@ -77,7 +80,7 @@ void main() {
     expect(settings, isEmpty,
         reason: '旧行随表一起删掉，没有新行；界面据 isUnset 显示指路文案');
 
-    // ⑥ 单日加项表保留（语义不变，不v清空）。
+    // ⑥ 单日加项表保留（语义不变，不清空）。
     final dayRows = await reopened.select(reopened.payrollDayRows).get();
     expect(dayRows, hasLength(1),
         reason: '单日加项表语义不变，保留原有数据');

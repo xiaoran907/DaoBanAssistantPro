@@ -278,14 +278,22 @@ class RecurringSeriesRows extends Table {
 
   BoolColumn get alarmEnabled => boolean().withDefault(const Constant(false))();
 
-  /// 0 = 每天，1 = 每周（看 [weekdays]），2 = 每月（看 [monthDay]）。
+  /// 0 = 每天，1 = 每周（看 [weekdays]），2 = 每月（看 [monthDays]），
+  /// 3 = 按班次（看 [shiftNames]）。
   IntColumn get repeatType => integer().withDefault(const Constant(0))();
 
   /// 每周：`1 << (weekday - 1)`，周一 = 1。与 `CustomAlarms.weekdays` 同一约定。
   IntColumn get weekdays => integer().withDefault(const Constant(0))();
 
-  /// 每月：1..31；该月没有这一天时取该月最后一天。
-  IntColumn get monthDay => integer().withDefault(const Constant(1))();
+  /// 每月：1..31 的**位掩码**（`1 << (day - 1)`，与 [weekdays] 同一套路）。
+  /// 该月没有这一天时取该月最后一天；多个选中日夹到月末后会去重。
+  ///
+  /// v15 之前这里是单日的 `month_day`，那一版的行在迁移里换算成掩码。
+  IntColumn get monthDays => integer().withDefault(const Constant(0))();
+
+  /// 按班次：选中的班次**名字**列表（JSON 数组），按名字匹配 —— 换排班表后只要
+  /// 新表里有同名班次就继续生效。空 / null = 未选。
+  TextColumn get shiftNames => text().nullable()();
 
   /// 首次生效日（纯日期，`dateOnly` 口径）。这一天之前不产生任何发生日。
   DateTimeColumn get startDate => dateTime()();
@@ -327,8 +335,8 @@ class PayrollMonthlyRows extends Table {
 /// [day] 与 [ShiftDayOverrides.day] 同一个口径：纯日期自 epoch 的天数（`dayNumber()`）。
 /// 删掉这一行即回到「这天没有额外加项」—— 不是记 0。
 ///
-/// 列名仍叫 `wage`（v16 遗留）：语义从「替换固定日薪」变成「在月薪之外加一笔」，
-/// 但改列名会牵动读写两侧与全部测试，v17 只改注释不改列名（老数据在迁移里已清空，
+/// 列名仍叫 `wage`（v17 遗留）：语义从「替换固定日薪」变成「在月薪之外加一笔」，
+/// 但改列名会牵动读写两侧与全部测试，v18 只改注释不改列名（老数据在迁移里已清空，
 /// 语义不再被旧数据污染）。
 class PayrollDayRows extends Table {
   IntColumn get day => integer()();
@@ -419,18 +427,24 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 19;
+  /// ⚠️ **这里有一条版本号断层，不是笔误**：上游 v0.12.3（2026-10-22）把 15 用在
+  /// 「重复待办每月多选 + 按班次名字」上，而本分支同期的 v0.13 开发版把 15 用在
+  /// 「班次多时段」上。两条线 2026-10-25 合流时**上游占 15，本分支各段整体后移
+  /// 一位、从 16 起**（16 班次多时段 / 17 薪资表 / 19 逐月薪资 / 20 日历映射）。
+  /// 于是装过 v0.12.3（= 15）的库升上来时，15 那段正好跳过（它已经做过 15 的事），
+  /// 16 段起才动手 —— 若把 16 段留在 15，那一列会被漏掉（`no such column`）。
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          if (from < 19) {
+          if (from < 20) {
             // v0.13 #6：系统日历同步映射表。
             await m.createTable(calendarEventMappingRows);
           }
-          if (from < 18) {
-            // v0.13：撤销 v17 的全局月薪（包月制），改成「逐月灵活填」。
+          if (from < 19) {
+            // v0.13：撤销 v18 的全局月薪（包月制），改成「逐月灵活填」。
             //
             // 用户 2026-10-24 拍板：「每个月可能月薪都不一样」—— 全局月薪一个固定数
             // 满足不了，删掉 `payroll_settings_rows` 表，新增 `payroll_monthly_rows`
@@ -442,33 +456,33 @@ class AppDatabase extends _$AppDatabase {
             //
             // `payroll_day_rows`（加项）保留，语义不变。
             //
-            // 从 v16 及更早升上来：payroll_settings_rows 可能是旧 schema（daily_wage）
+            // 从 v17 及更早升上来：payroll_settings_rows 可能是旧 schema（daily_wage）
             // 或新 schema（monthly_wage），无论哪个都直接 DROP，不区分版本。
             await customStatement('DROP TABLE IF EXISTS payroll_settings_rows');
             await m.createTable(payrollMonthlyRows);
             // payroll_record_rows 主键变了：先备份旧数据，删表，重建，把旧数据搬过来（seq = 0）。
-            // payroll_record_rows 主键变了：表存在（from ≥ 16）才需要重建搬数据
-            //（seq = 0）；≤v15 的库此刻还没有它（< 16 分支在下面才建），留给那个
+            // payroll_record_rows 主键变了：表存在（from ≥ 17）才需要重建搬数据
+            //（seq = 0）；≤v16 的库此刻还没有它（< 17 分支在下面才建），留给那个
             // 分支按当前 schema 直接建 —— 硬 SELECT 会炸，这正是迁移测试抓到的。
-            if (from >= 16) {
-              await customStatement('DROP TABLE IF EXISTS payroll_record_rows_v17_backup');
-              await customStatement('CREATE TABLE payroll_record_rows_v17_backup AS '
+            if (from >= 17) {
+              await customStatement('DROP TABLE IF EXISTS payroll_record_rows_v18_backup');
+              await customStatement('CREATE TABLE payroll_record_rows_v18_backup AS '
                   'SELECT * FROM payroll_record_rows');
               await customStatement('DROP TABLE payroll_record_rows');
               await m.createTable(payrollRecordRows);
               await customStatement('INSERT INTO payroll_record_rows (year, month, seq, actual, note) '
-                  'SELECT year, month, 0, actual, note FROM payroll_record_rows_v17_backup');
-              await customStatement('DROP TABLE payroll_record_rows_v17_backup');
+                  'SELECT year, month, 0, actual, note FROM payroll_record_rows_v18_backup');
+              await customStatement('DROP TABLE payroll_record_rows_v18_backup');
             }
           }
-          if (from < 16) {
-            // 统计与薪资：三张新表（v16），一行既有数据都不碰。
-            // payroll_settings_rows 不再建：v18（上面）刚把它 DROP，且 v0.13 起
+          if (from < 17) {
+            // 统计与薪资：两张新表（v17），一行既有数据都不碰。
+            // payroll_settings_rows 不再建：v19（上面）刚把它 DROP，且 v0.13 起
             // 没有任何代码读它 —— 建出来只会留一张死表。
             await m.createTable(payrollDayRows);
             await m.createTable(payrollRecordRows);
           }
-          if (from < 15) {
+          if (from < 16) {
             // 班次多时段：给班次表加一列 NOT NULL DEFAULT ''。
             //
             // ⚠️ **`shift_class_rows` 只有 v6 及以后才有**（它是 `from < 6` 那段
@@ -478,6 +492,35 @@ class AppDatabase extends _$AppDatabase {
             // 两次的先例）。
             if (from >= 6) {
               await m.addColumn(shiftClassRows, shiftClassRows.extraSegments);
+            }
+          }
+          if (from < 15) {
+            // 重复待办（上游 v0.12.3）：每月从「单日」改成「多选几天」（位掩码），并加一列按班次
+            // 选择的**班次名字**。旧的 `month_day` 迁完就删（不留死列，照 v10 删
+            // `alarm_minute` 的先例）。
+            //
+            // ⚠️ **必须排在 `from < 11` 之前**（分支按倒序跑），而
+            // `recurring_series_rows` 是 `from < 11` 那段才建的 —— 所以先判版本。
+            // 从 v10 及更早升上来时，表由 `from < 11` 按**当前 schema** 建出来，
+            // 新列自带默认值（照 v9→v10「只有 v6 及以后才有 shift_class_rows」、
+            // v12→v13「只有 v12 才有时段两列」两次先例）。
+            //
+            // ⚠️ **`addColumn` 必须在 `alterTable` 之前**：`TableMigration` 只拷
+            // 「新旧表都有的列」，先重建的话 `month_days` 会拿到默认值 0、迁移数据
+            // 全丢。
+            if (from >= 11) {
+              await m.addColumn(
+                  recurringSeriesRows, recurringSeriesRows.monthDays);
+              await m.addColumn(
+                  recurringSeriesRows, recurringSeriesRows.shiftNames);
+              // 单日 → 位掩码。dirty 的 month_day（0 / >31）不动，留 0。
+              await customStatement(
+                'UPDATE recurring_series_rows '
+                'SET month_days = (1 << (month_day - 1)) '
+                'WHERE repeat_type = 2 AND month_day BETWEEN 1 AND 31',
+              );
+              // ignore: experimental_member_use
+              await m.alterTable(TableMigration(recurringSeriesRows));
             }
           }
           if (from < 14) {
