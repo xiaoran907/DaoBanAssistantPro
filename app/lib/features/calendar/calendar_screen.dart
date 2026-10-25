@@ -28,6 +28,8 @@ import '../../domain/schedule_chain.dart';
 import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
 import '../alarm/alarm_service.dart';
+import 'weather_service.dart';
+import 'package:geolocator/geolocator.dart';
 import '../widget/widget_service.dart';
 import 'calendar_lens.dart';
 import 'lens_warp_scope.dart';
@@ -137,6 +139,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   late DateTime _selected; // 选中的日期（默认今天）
   /// 底部信息卡是否展开。默认收起成一个小条；点格子某天或点它展开。
   bool _infoCardExpanded = false;
+
+  /// 今日天气（信息卡显示）。null = 没拉到（定位拒绝 / 网络失败 / 未开始）。
+  WeatherInfo? _weather;
+  DateTime? _weatherFetchedAt; // 天气缓存时间戳（30 分钟内不重复拉）
 
   bool _pressed = false; // 按下膨胀
   bool _dragActive = false; // 拖拽中（跟手，无过渡）
@@ -346,6 +352,36 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       if (!mounted) return;
       setState(() {});
     });
+    _loadWeather();
+  }
+
+  /// 拉今日天气（定位 → Open-Meteo）。30 分钟内已拉过就不再拉；
+  /// 失败静默（天气是锦上添花，不阻塞日历）。
+  Future<void> _loadWeather() async {
+    final last = _weatherFetchedAt;
+    if (last != null &&
+        DateTime.now().difference(last).inMinutes < 30) {
+      return;
+    }
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      final asked = await Geolocator.requestPermission();
+      if (asked == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
+      final w = await WeatherService.fetchWeather(
+          pos.latitude, pos.longitude);
+      if (!mounted) return;
+      setState(() {
+        _weather = w;
+        _weatherFetchedAt = DateTime.now();
+      });
+    } catch (_) {
+      // 定位失败 / 网络失败：不显示天气即可。
+    }
   }
 
   @override
@@ -837,7 +873,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               // 底部留出悬浮导航胶囊的高度 —— 否则收起的小条正好在屏幕底、
               // 被导航胶囊盖住（用户 2026-10-25 反馈）。
               Padding(
-                padding: EdgeInsets.fromLTRB(AppTokens.spaceLg, AppTokens.spaceSm,
+                padding: const EdgeInsets.fromLTRB(AppTokens.spaceLg, AppTokens.spaceSm,
                     AppTokens.spaceLg, kNavCapsuleInset),
                 child: _infoCard(context, chain),
               ),
@@ -899,6 +935,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           ),
         ),
         if (isToday) ...[const SizedBox(width: AppTokens.spaceSm), _todayBadge(context)],
+        // 收起态也带天气：图标 + 温度（展开态在下方有大行）。
+        if (_weather != null) ...[const SizedBox(width: AppTokens.spaceSm)],
+        if (_weather != null)
+          Icon(weatherIcon(_weather!.weatherCode, _weather!.isDay),
+              size: AppTokens.iconSm, color: muted),
+        if (_weather != null) ...[const SizedBox(width: AppTokens.gapHair)],
+        if (_weather != null)
+          Text(_weather!.temperatureText,
+              maxLines: 1, style: AppTokens.labelSecondary),
         const Spacer(),
         // 展开/收起箭头。
         InkWell(
@@ -947,6 +992,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               dateRow,
+          // 今日天气：图标 + 温度 + 现象（用户 2026-10-25 要求）。
+          // 没拉到（定位拒绝 / 无网）就不显示，不占位。
+          if (_weather != null) ...[const SizedBox(height: AppTokens.spaceSm)],
+          if (_weather != null)
+            Row(
+              children: [
+                Icon(weatherIcon(_weather!.weatherCode, _weather!.isDay),
+                    size: AppTokens.iconMd,
+                    color: muted),
+                const SizedBox(width: AppTokens.gapIconText),
+                Text(
+                  '${_weather!.temperatureText} '
+                  '${L10n.weatherLabel(weatherLabelKey(_weather!.weatherCode))}',
+                  maxLines: 1,
+                  style: AppTokens.rowSecondary,
+                ),
+              ],
+            ),
           // 班次列表：每个班次的每个时段段一行（色点 + 班次名 + 时段）。
           if (shifts.isNotEmpty) ...[
             const SizedBox(height: AppTokens.spaceSm),
@@ -2041,7 +2104,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final chipH = 18 * ts;
     final chipGap = ts;
     final tagH = 13 * ts;
-    final inset = 4.0;
+    const inset = 4.0;
     // 先把当月每天的胶囊数（= 全部班次的所有时段段数）算出来，用于行内等高。
     // 参考图样式：一天几个时段就几个胶囊，行高按**该行最多那天**定。
     final cellShiftCounts = <int>[];

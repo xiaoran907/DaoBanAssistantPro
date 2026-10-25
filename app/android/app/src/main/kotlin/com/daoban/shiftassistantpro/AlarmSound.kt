@@ -58,9 +58,12 @@ object AlarmSound {
             AlarmLog.info(context, "AlarmSound: 仅震动，不发声")
             return null
         }
+        val fadeIn = context.getSharedPreferences("flutter", Context.MODE_PRIVATE)
+            .getBoolean("fadeInEnabled", false)
         if (!uriStr.isNullOrEmpty()) {
             tryCreate(context, Uri.parse(uriStr))?.let {
                 AlarmLog.info(context, "AlarmSound: 使用自选铃声 $uriStr")
+                if (fadeIn) rampVolume(it)
                 return it
             }
             AlarmLog.error(
@@ -71,8 +74,32 @@ object AlarmSound {
         val mp = tryCreate(context, builtinUri(context))
         if (mp == null) {
             AlarmLog.error(context, "AlarmSound: 内置铃声也起不来（raw/alarm_beep 缺失？）")
+        } else if (fadeIn) {
+            rampVolume(mp)
         }
         return mp
+    }
+
+    /**
+     * 铃声渐响：3 秒内音量从 0 线性抬到 1（每 100ms 一档）。
+     * 响铃是个常驻前台服务，Handler 挂在主线程即可（服务进程不死，postDelayed
+     * 不会被回收）。
+     */
+    private fun rampVolume(mp: MediaPlayer) {
+        mp.setVolume(0f, 0f)
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val steps = 30 // 3s / 100ms
+        var i = 0
+        handler.post(object : Runnable {
+            override fun run() {
+                i++
+                val v = (i.toFloat() / steps).coerceIn(0f, 1f)
+                mp.setVolume(v, v)
+                if (i < steps) {
+                    handler.postDelayed(this, 100)
+                }
+            }
+        })
     }
 
     private fun tryCreate(context: Context, uri: Uri): MediaPlayer? {

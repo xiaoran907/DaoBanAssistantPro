@@ -10,6 +10,7 @@ import '../../core/widgets/centered_content.dart';
 import '../../core/app_info.dart';
 import '../../core/design_tokens.dart';
 import '../../core/glass/glass.dart';
+import '../../core/haptics.dart';
 import '../../core/l10n.dart';
 import '../../core/update_checker.dart';
 import '../../core/widgets/glass_action_button.dart';
@@ -310,6 +311,8 @@ class ProfileScreen extends ConsumerWidget {
                   _RingtoneRow(onPick: () => _showRingtonePicker(context, ref)),
                   const Divider(height: 1),
                   const _SnoozeRow(),
+                  const Divider(height: 1),
+                  const _FadeInRow(),
                 ],
               ),
             ),
@@ -916,6 +919,48 @@ class _SnoozeRowState extends State<_SnoozeRow> {
       );
 }
 
+/// 铃声渐响开关：响了之后音量从低到高（用户 2026-10-25 要求，放「闹钟」卡里）。
+class _FadeInRow extends ConsumerStatefulWidget {
+  const _FadeInRow();
+
+  @override
+  ConsumerState<_FadeInRow> createState() => _FadeInRowState();
+}
+
+class _FadeInRowState extends ConsumerState<_FadeInRow> {
+  bool _enabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final v = await AlarmService.fadeInEnabled();
+    if (!mounted) return;
+    setState(() => _enabled = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: const Icon(Icons.volume_up_outlined),
+        title: Text(L10n.fadeInRingtone),
+        subtitle: Text(L10n.fadeInRingtoneSubtitle,
+            maxLines: 2,
+            style: AppTokens.rowSecondary
+                .copyWith(color: AppTokens.inkMuted(context))),
+        trailing: GlassSwitch(
+          value: _enabled,
+          onChanged: (v) async {
+            setState(() => _enabled = v);
+            await AlarmService.setFadeInEnabled(v);
+            Haptics.commit();
+          },
+        ),
+      );
+}
+
 /// 权限检测卡：展示通知 + 精确闹钟权限状态，未开启时可一键跳转系统开启。
 class _PermissionCheck extends ConsumerStatefulWidget {
   const _PermissionCheck();
@@ -1311,8 +1356,17 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
     setState(() => _enabled = v);
     final sp = await SharedPreferences.getInstance();
     await sp.setBool('calendarSyncEnabled', v);
+    // 打开时自动建「倒班助手」日历，不弹「选日历」（用户 2026-10-25）。
     if (v && _calendarId == null) {
-      await _pickCalendar();
+      final repo = ref.read(appRepositoryProvider);
+      final service = CalendarSyncService(repo);
+      final id = await service.ensureCalendar();
+      if (id != null && mounted) {
+        setState(() {
+          _calendarId = id;
+          _calendarName = CalendarSyncService.appCalendarName;
+        });
+      }
     }
   }
 
@@ -1383,13 +1437,22 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
 
   Future<void> _syncNow() async {
     if (!mounted) return;
-    if (_calendarId == null) {
-      await _pickCalendar();
-      return;
-    }
-    setState(() => _syncing = true);
+    // 不弹「选日历」—— 自动创建一个「倒班助手」日历（用户 2026-10-25）。
     final repo = ref.read(appRepositoryProvider);
     final service = CalendarSyncService(repo);
+    if (_calendarId == null) {
+      final id = await service.ensureCalendar();
+      if (id == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(L10n.calendarSyncNoPermission)),
+          );
+        }
+        return;
+      }
+      if (mounted) setState(() => _calendarId = id);
+    }
+    setState(() => _syncing = true);
     try {
       final failed = await service.sync();
       if (mounted) {

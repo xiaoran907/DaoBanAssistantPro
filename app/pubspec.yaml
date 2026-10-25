@@ -35,6 +35,8 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   # 系统日历同步（单向：App → 系统日历，D19~D24）
   device_calendar_plus: ^0.8.1
+  # 今日天气：定位拿坐标（信息卡显示天气）
+  geolocator: ^14.0.2
 
   cupertino_icons: ^1.0.8
 

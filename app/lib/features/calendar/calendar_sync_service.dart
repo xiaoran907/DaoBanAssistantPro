@@ -224,6 +224,25 @@ class CalendarSyncService {
     await sp.setString(_prefsKeyCalendarId, calendarId);
   }
 
+  /// 自动同步用的日历名（用户 2026-10-25：不弹日历选择，自动建一个专属日历）。
+  static const String appCalendarName = '倒班助手';
+
+  /// 确保有「倒班助手」日历：已有就返回它的 id，没有就创建一个并记住。
+  ///
+  /// 创建失败（权限不足 / 账户限制）返回 null —— 调用方回落成「同步失败」。
+  Future<String?> ensureCalendar() async {
+    final existing = await getCalendarId();
+    if (existing != null) return existing;
+    final permission = await requestPermissions();
+    if (!permission) return null;
+    final calendarId = await DeviceCalendar.instance.createCalendar(
+      name: appCalendarName,
+      colorHex: '#1925AC', // 主色
+    );
+    if (calendarId.isNotEmpty) await saveCalendarId(calendarId);
+    return calendarId.isNotEmpty ? calendarId : null;
+  }
+
   /// 列出可用的日历。
   Future<List<Calendar>> listCalendars() async {
     final status = await DeviceCalendar.instance.hasPermissions();

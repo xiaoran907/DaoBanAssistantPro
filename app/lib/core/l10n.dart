@@ -196,6 +196,9 @@ class L10n {
   static String get ringtone => t('闹钟铃声', 'Alarm ringtone');
   static String get ringtoneSubtitle => t('选择内置、系统、你的铃声，或「仅震动」', 'Choose a built-in, system, or your own ringtone, or vibrate only');
   static String get snoozeDuration => t('贪睡时长', 'Snooze length');
+  static String get fadeInRingtone => t('铃声渐响', 'Ringtone fade-in');
+  static String get fadeInRingtoneSubtitle => t(
+      '响铃时音量从低到高慢慢变大', 'Volume rises gradually when ringing');
   static String snoozeDurationSubtitle(int minutes) => t(
       '「再睡一会」之后隔 $minutes 分钟重新响铃',
       'A snooze rings again $minutes min later');
@@ -1371,4 +1374,20 @@ class L10n {
   static String get shiftDndNoPermission => t(
       '需要勿扰权限，请在系统设置里允许本应用',
       'Do Not Disturb permission required — allow this app in system settings');
+
+  // ── 今日天气 ──────────────────────────────────────────────────
+  static String weatherLabel(String key) => switch (key) {
+        'clear' => t('晴', 'Clear'),
+        'partlyCloudy' => t('多云', 'Partly cloudy'),
+        'overcast' => t('阴', 'Overcast'),
+        'fog' => t('雾', 'Fog'),
+        'drizzle' => t('毛毛雨', 'Drizzle'),
+        'rain' => t('雨', 'Rain'),
+        'snow' => t('雪', 'Snow'),
+        'showers' => t('阵雨', 'Showers'),
+        'thunderstorm' => t('雷暴', 'Thunderstorm'),
+        _ => '',
+      };
+  static String get weatherUnavailable => t('天气暂不可用', 'Weather unavailable');
+  static String get weatherLocationDenied => t('未开启定位', 'Location off');
 }

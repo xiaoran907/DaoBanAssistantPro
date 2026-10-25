@@ -963,6 +963,29 @@ class AlarmService {
   /// 贪睡时长在 SharedPreferences 里的键（分钟）。
   static const String snoozeMinutesKey = 'snoozeMinutes';
 
+  /// 铃声渐响开关的 prefs 键（与原生 `AlarmSound.kt` 读的是同一个）。
+  static const String fadeInEnabledKey = 'fadeInEnabled';
+
+  /// 铃声是否渐响（默认关）。
+  ///
+  /// ⚠️ **直接读 prefs，不走 `appSettingsProvider`**（与 `snoozeMinutes` 同一条
+  /// 理由）：原生响铃链路只认 prefs。
+  static Future<bool> fadeInEnabled() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      return sp.getBool(fadeInEnabledKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> setFadeInEnabled(bool enabled) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setBool(fadeInEnabledKey, enabled);
+    } catch (_) {}
+  }
+
   /// 当前贪睡时长（分钟）。
   ///
   /// ⚠️ **直接读 prefs，不走 `appSettingsProvider`。** 响铃界面是原生闹钟的
