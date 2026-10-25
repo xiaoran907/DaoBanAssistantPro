@@ -29,7 +29,7 @@ import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
 import '../alarm/alarm_service.dart';
 import 'weather_service.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:location/location.dart';
 import '../widget/widget_service.dart';
 import 'calendar_lens.dart';
 import 'lens_warp_scope.dart';
@@ -367,25 +367,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       return;
     }
     try {
-      // 没权限就请求；拒绝/限制则标记失败返回。vivo 可能返回 `restricted`，
-      // 不能只认 `denied`。
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      // 没权限就请求；拒绝/限制则标记失败返回。用 `location` 包（原生
+      // LocationManager，不依赖 GMS —— vivo 无 Google Play Services 也能定位）。
+      final loc = Location();
+      if (!(await loc.requestPermission() == PermissionStatus.granted ||
+          await loc.hasPermission() == PermissionStatus.granted)) {
         if (!mounted) return;
         setState(() => _weatherFailed = true);
         return;
       }
-      // 定位加了超时：vivo 上 getCurrentPosition 偶尔不返回，不能一直等。
-      final pos = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(
-                  accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 10)))
+      // getLocation 结论在部分 ROM（vivo）上可能一直不回调，加超时兜底。
+      final pos = await loc.getLocation()
           .timeout(const Duration(seconds: 12));
+      if (pos.latitude == null || pos.longitude == null) {
+        if (!mounted) return;
+        setState(() => _weatherFailed = true);
+        return;
+      }
       final w = await WeatherService.fetchWeather(
-          pos.latitude, pos.longitude);
+          pos.latitude!, pos.longitude!);
       if (!mounted) return;
       setState(() {
         _weather = w;

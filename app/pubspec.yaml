@@ -35,8 +35,9 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   # 系统日历同步（单向：App → 系统日历，D19~D24）
   device_calendar_plus: ^0.8.1
-  # 今日天气：定位拿坐标（信息卡显示天气）
-  geolocator: ^14.0.2
+  # 今日天气：定位拿坐标。用 `location`（原生 LocationManager，不依赖 GMS）——
+  # vivo 等无 Google Play Services 的国行机，geolocator 拿不到位置。
+  location: ^6.0.0
 
   cupertino_icons: ^1.0.8
 
