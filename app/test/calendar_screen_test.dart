@@ -305,14 +305,18 @@ void main() {
   });
 
   testWidgets('窄屏：顶栏「今天」收成纯图标钮', (tester) async {
-    // 信息卡（含它的「今天」徽章）已删：宽屏只剩顶栏胶囊那一处文字；
-    // 320 宽下胶囊收成图标 → 一处文字都没有，只剩图标。
+    // v0.14 信息卡回来了（含它的「今天」徽章），所以「今天」文字会有两处 ——
+    // 这条只测顶栏那颗胶囊：宽屏有字、320 窄屏收成图标。
+    Finder headerToday() => find.descendant(
+        of: find.byKey(const Key('header-single-row')),
+        matching: find.text(L10n.today));
     await _pumpCalendar(tester, 'four_crew_three_shift');
-    expect(find.text(L10n.today), findsOneWidget);
+    expect(headerToday(), findsOneWidget,
+        reason: '默认宽度下顶栏「今天」胶囊有文字');
     await _disposeCalendar(tester);
 
     await _pumpCalendar(tester, 'four_crew_three_shift', width: 320);
-    expect(find.text(L10n.today), findsNothing,
+    expect(headerToday(), findsNothing,
         reason: '320 宽下顶栏「今天」该收成纯图标');
     expect(find.byIcon(Icons.today_outlined), findsWidgets);
     await _disposeCalendar(tester);
@@ -719,17 +723,20 @@ void main() {
     await tester.tap(find.text('$_rangeFirstDay').first);
     await tester.pumpAndSettle();
 
-    // 卡片外面还裹着一层 `_cellInset`（= gapHair）的四边内缩，所以格子高 =
-    // 卡片高 + 2×gapHair。滑块走的是「松手位置 − 起手位置」，位移给满一格。
+    // 卡片外面还裹着一层 `_cellInset`（= gapHair）的四边内缩。
+    // v0.14 行内等高：不同行高度不同，「拖一格高」不再是固定的 cellH，
+    // 所以位移直接取「8 日中心 → 15 日中心」的垂直差（正是手指要走的真实距离）。
     final card = find.byKey(const ValueKey('day-card-$_rangeFirstDay'));
-    final cellH = tester.getSize(card).height + AppTokens.gapHair * 2;
+    final targetCard = find.byKey(const ValueKey('day-card-$_rangeLastDay'));
+    final from = tester.getCenter(card);
+    final to = tester.getCenter(targetCard);
 
-    final gesture = await tester.startGesture(tester.getCenter(card));
+    final gesture = await tester.startGesture(from);
     // 第一下先走掉 touch slop（这一下只让 Pan 赢得竞技场，滑块纹丝不动），
-    // 第二下才是真正的位移。
+    // 第二下才是真正的位移 —— 所以第二下要**减去**第一下已经走掉的 20。
     await gesture.moveBy(const Offset(0, 20));
     await tester.pump();
-    await gesture.moveBy(Offset(0, cellH));
+    await gesture.moveBy(Offset(0, to.dy - from.dy - 20));
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
@@ -1562,7 +1569,7 @@ void main() {
     expect(cellMaxScale(at(900, 420)), 1.7);
   });
 
-  testWidgets('宽横屏下格子里的字真的更大', (tester) async {
+  testWidgets('宽横屏下格子里的日期字不再跟着格子长（v0.14：固定字号）', (tester) async {
     await _pumpCalendar(tester, 'six_crew_three_shift',
         width: 1280, height: 800);
     final wide = tester.getSize(find.descendant(
@@ -1576,10 +1583,10 @@ void main() {
         of: find.byKey(const ValueKey('day-card-13')),
         matching: find.text('13')));
 
-    // 字号是按 `s` 乘上去的，而格子里的 `FittedBox` 给子件的是**无界约束**
-    // （缩放只改变绘制），所以这里量到的就是「按 s 排出来的自然尺寸」。
-    expect(wide.height / phone.height, greaterThan(1.15),
-        reason: '宽屏 ${wide.height} vs 手机 ${phone.height} —— 字没跟着档位长');
+    // v0.14 格子字固定字号（参考图样式），不再按 cellH 等比缩放 ——
+    // 宽屏与手机的字一样大（车机上的大空间由右栏信息卡承担）。
+    expect((wide.height - phone.height).abs(), lessThan(1.0),
+        reason: '宽屏 ${wide.height} vs 手机 ${phone.height} —— 固定字号不该随格子变');
     await _disposeCalendar(tester);
   });
 }

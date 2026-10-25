@@ -168,6 +168,23 @@ void main() {
     expect(rest.endsNextDay, isFalse);
   });
 
+  test('时段胶囊文本：无前导零、跨午夜直接写钟面（参考图样式）', () {
+    expect(const ShiftSegment(6 * 60, 8 * 60).cellLabel, '6-8');
+    expect(const ShiftSegment(16 * 60, 18 * 60).cellLabel, '16-18');
+    // 22:00 → 次日 00:00：end 用 24:00 存
+    expect(const ShiftSegment(22 * 60, 24 * 60).cellLabel, '22-0');
+    // 00:00 → 02:00
+    expect(const ShiftSegment(0, 2 * 60).cellLabel, '0-2');
+    // 16:00 → 次日 02:00（end ≥ 1440 累计式）
+    expect(const ShiftSegment(16 * 60, 26 * 60).cellLabel, '16-2');
+    // 20:30 → 次日 08:30
+    expect(const ShiftSegment(20 * 60 + 30, 8 * 60 + 30).cellLabel, '20-8');
+    // 24 小时值班：08:00 → 次日 08:00
+    expect(const ShiftSegment(8 * 60, 32 * 60).cellLabel, '8-8');
+    // 整点对整点，分钟被截掉（格子只显示小时）
+    expect(const ShiftSegment(6 * 60 + 30, 10 * 60 + 45).cellLabel, '6-10');
+  });
+
   group('班组错位：撞班检测与均分', () {
     // 用户报的那套：五班三倒的 10 天一轮（白白中中休夜夜休休休），
     // 但各班组仍按 5 天一轮时的 1 天错开 —— 每个班连排两天，于是天天撞。

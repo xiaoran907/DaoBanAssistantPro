@@ -41,6 +41,10 @@ void showAppInfoDialog(
 }
 
 const String _changelogZh =
+'v0.14.1\n'
+    '· 日历格子重做：格子里只留「日期 + 时段胶囊」，一天几个班次时段就几个实心胶囊（6-8、16-18、22-0 这样直接写时间段），行高跟着内容自动长、同一行对齐；格子里不再写农历 / 倒计时 / 首末时段，这些挪到格子下方新加的「今日详情卡」里（选中哪天讲哪天：班次名 + 时段、农历与节假日、距下一班还有多久、已调班标记、本月统计）\n'
+    '· 时段胶囊的颜色跟着班次走（班次色就是胶囊底色），已结束的时段变淡、还没结束的保持实色，一眼看出今天还有几段没过；今天那格日期加粗变主色，整个格子套一圈深色选中框\n'
+    '\n'
 'v0.13.0\n'
     '· 新增「值班制 · 上 2 休 8」模板：一天 12 个 2 小时班、5 个班组各错开 2 小时轮着上，班次名直接就是时间段（0-2、2-4……），不再有白班夜班的说法\n'
     '· 薪资改成按你自己填的来：月薪每个月单独填一次（每个月可能都不一样），这个月的应发 = 月薪 ＋ 加项；哪天加班或双倍工资，就在那天单独填一笔（「加项 100」一点就填上）；同一个月可以记多条实发，月中发一半、月底发一半都记得下\n'
@@ -101,14 +105,13 @@ const String _changelogZh =
     '· 今日卡补齐了 App 信息卡上有的三行：班次后面那句备注（「休息日 · 不响闹钟」/「闹钟 07:00」）、「其他班组」四个字、以及「本月 大休13 · 白7 · 上夜6 · 下夜5」\n'
     '· 顺带：那三行补上之后今日卡上下的空白小了一半；月历格子里的班次胶囊也跟着格子大小缩放了，不再是一成不变的小号\n'
     '\n'
-'v0.11.22\n'
-    '· 修上一版带出来的一处：浅色模式下，压在实心主色上的字是黑的 —— 底部导航选中的那两个字、「我的」页那几条分段器（主题模式 / 语言 / 字体大小）都读不清，现在一律白字\n'
-    '· 压深改成「够用就好」：以前不管原来多浅都再压掉四成，默认那颗蓝明明够亮也被压成近黑；现在只有真不够的（青、橙）才压，而且压到刚读得清就停\n'
-    '· 于是胶囊、按钮、导航、开关这几处的颜色都回到了接近「我的 → 外观」里那颗主色 —— 上一版说的「实心面比主色深一档」那个代价，现在只在青和橙上还看得到\n'
-    '\n'
     ;
 
 const String _changelogEn =
+'v0.14.1\n'
+    '· Calendar cells rebuilt: each cell now holds just the date plus solid time-span pills, one pill per shift span of the day (6-8, 16-18, 22-0), with row height growing to fit and every cell in a row aligned; the lunar date, countdown and first/last span text are gone from cells and move to a new detail card below the grid (it follows whichever day you select: shift names and spans, lunar date and holidays, time until the next span, the adjusted marker and the month tally)\n'
+    '· Each pill is filled with its own shift color; spans that have ended fade out while upcoming ones stay solid, so you can see at a glance how many spans are still ahead; today\'s date is bold in the accent color and the whole cell gets a dark selection ring\n'
+    '\n'
 'v0.13.0\n'
     '· New 24-hour duty template (2h on, 8h off): twelve 2-hour shifts a day spread over five crews two hours apart, and shifts are named by their time span (0-2, 2-4, ...) rather than day or night\n'
     '· Salary is now filled in by you: set the monthly wage separately for each month (it can differ), and the month\'s payable total is that wage plus extras; overtime or double pay on a single day gets its own entry ("Extra 100" fills it in with one tap); a month can hold several actual-paid records, so a mid-month half and a month-end half both fit\n'
@@ -168,11 +171,6 @@ const String _changelogEn =
     '· The month widget marks today with the same translucent block the app uses (accent wash plus accent outline) instead of a solid fill; and if that day is a public holiday, the lunar date is red again\n'
     '· The today card gained the three rows the app info card has: the note after the shift name (Rest day · no alarm / Alarm 07:00), the Other crews label, and the month tally (This month · 13 off · 7 day · …)\n'
     '· Along the way: with those three rows the card top and bottom gaps are about half what they were, and the shift chips in the month grid now scale with the cell instead of staying one small size\n'
-    '\n'
-'v0.11.22\n'
-    '· Fixed what the previous release brought in: in light mode the text on solid accent surfaces was dark, so the selected bottom-nav item and the segments on Me (theme mode / language / font size) were hard to read. They are white now\n'
-    '· Darkening is now "just enough". It used to take 40% off the accent no matter how dark it already was, which crushed the default blue into near-black; now only the accents that genuinely need it (teal, orange) are darkened, and only until white text just passes\n'
-    '· So pills, buttons, the nav item and switches are back near the accent you picked under Me, Appearance. The "one step darker" trade-off from the last release only shows on teal and orange now\n'
     '\n'
     ;
 String get appChangelog => L10n.isEn ? _changelogEn : _changelogZh;

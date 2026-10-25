@@ -181,8 +181,24 @@ bool _sameSegments(List<ShiftSegment> a, List<ShiftSegment> b) {
 class ShiftSegment {
   const ShiftSegment(this.startMinute, this.endMinute);
 
+  /// 开始时间（分钟自开始日午夜）。
   final int startMinute;
+
+  /// 结束时间（分钟自开始日午夜）；跨过午夜后继续累加。
   final int endMinute;
+
+  /// 日历格子里那个时段胶囊的文本（参考图样式）：无前导零、跨午夜直接写钟面。
+  ///
+  /// 例：`06:00-08:00 → "6-8"`，`22:00-次日 00:00 → "22-0"`，
+  /// `00:00-02:00 → "0-2"`，`16:00-次日 02:00 → "16-2"`。
+  ///
+  /// 与 [ShiftClass.timeRangeText]（带前导零、给信息卡用）不同：格子里窄，
+  /// 无前导零省两三个字符；跨午夜（end ≥ 1440）减掉 1440 得钟面值，不写「次日」。
+  String get cellLabel {
+    final startH = startMinute ~/ 60;
+    final endH = (endMinute % 1440) ~/ 60;
+    return '$startH-$endH';
+  }
 
   @override
   bool operator ==(Object other) =>

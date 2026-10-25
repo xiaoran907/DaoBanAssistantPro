@@ -51,6 +51,7 @@
 → 0.11.21(+168) 测试版（**实心主色面换成深一档的主色**。用户 2026-10-15 从三张对照图里挑了「实色压深一档 + 白字」：新增 `AppTokens.solidAccent()`（主色明度 × 0.62、色相不动），`accentGradient` 从「原主色 0.85 → 0.50 的半透明渐变」换成「深一档的 1.0 → 0.92」—— 主按钮 / 弹窗动作钮 / 导航选中 / 分段器滑块 / 待办悬浮按钮 / 开关 / 勾选块 / 胶囊入口 / 液态档玻璃滴一处收口。白字在原主色上 teal 2.63、orange 2.55、rose 4.09 全不到 AA，现在五种主色在两档底色、两端都 ≥ 5.0。**顺带量出并修掉一件更早的事：旧填充是半透明的，压在白卡上连 primary 的尽头都只有 2.1:1。** 护栏 `design_tokens_test.dart` 换成「白字在渐变两端 × 两档底色都过 AA + 色相不变、明度更小」，反向验证过。⚠️ **这一版漏了两处、且护栏是假的绿** —— 见上面 0.11.22）
 → **0.13.0(+180) 正式稳定版**（归纳本分支 0.12.4~0.13.0 的十八个提交 ＋ 同轮并入上游 v0.12.2 / v0.12.3：**薪资改成「逐月月薪 ＋ 逐日加项 ＋ 多条实发」**、**值班制「上 2 休 8」模板**（一天 12 个 2 小时班、5 个班组错开 2 小时）、**周期里一天多段班**、**日历页去掉今日信息卡**（信息进格子、今天那格显示倒计时、格子可堆多个班次胶囊）、**#5「我的」页导航栏开关与拖拽排序**、**#6 系统日历同步 ＋ 值班自动勿扰**、WebDAV 坚果云 409 兼容、农历可关；上游带来**重复待办的系列编辑器**与**按班次 / 每月多选**。⚠️ **两边迁移段撞在 15 号上**：上游占 15，本分支各段整体顺移一位、`schemaVersion` → **20** —— 按 15 直接升上来会跳过上游那段（丢功能）而 drift 却声明了 `extra_segments`，一读班次即 `no such column: extra_segments`。同轮把「按班次」匹配对上「一天多段班」（`ShiftNameResolver` / `ScheduleChain.shiftNamesOn`）。详见「最近改动」。）
 → **0.13.0(+181) 正式稳定版**（发布前四收口：**① 自动同步接线** —— `maybeAutoSync` 挂在冷启动闸上，配置齐全才跑、冲突不弹窗、失败静默；**② 导航栏全关死路** —— `setEnabled` 补「至少留一个」下限，否则连「清空重置」都进不去；**③ 帮助文案改口** —— 「换手机」不再写「没有云同步也没有导出」，补「系统日历同步」「导航栏隐藏」两条；**④ 本地导出 / 导入接上入口** —— 原生 `MainActivity` 加 `createBackupFile` / `pickBackupFile` 两个 SAF 方法，「我的 → 数据」加「导出备份 / 导入备份」两行。单测 1186 → **1187**（新增导航下限用例），`flutter analyze` 0 issue。）
+→ **0.14.1(+182) 测试版**（**日历格子重做**，参考用户 2026-10-25 发的图：格子里只留「日期 + 时段胶囊」—— 一天几个班次时段就几个**实心胶囊**（班次色做底、白字、`6-8` / `22-0` 式无冒号，`ShiftSegment.cellLabel`），**已结束的时段变淡、未结束保持实色**（深浅编码时间远近）；**行内等高 + 内容自适应**（`_rowHeights` 数组，行高 = 该行最多胶囊数 × 单胶囊高 + 日期 + 标签 + 呼吸，乘 textScaler；坐标换算从均分 `cellH` 改为**行高累加** —— `_cellRect` / `_dateFromPosition` / `_blockPlacement` / 水带 `rangeBandPath` 全部适配）；格子里保留三个小标记：节假日/调休小标签、右上「已调班」点、今天深色选中框。**从格子移走的农历 / 倒计时 / 已调班 / 节假日 / 班次名 + 本月统计，进新增的「今日详情卡」**（`_infoCard`，竖屏网格下方 / 宽屏右栏；选中哪天讲哪天；0.13.0 曾删过信息卡，这版恢复但做成了简洁版 —— 不含其他班组与待办徽章）。⚠️ **0.13.0 的「信息进格子」被这版推翻**：格子又改回简洁风，那条更新日志如实保留在历史里。单测 1187 → **1188**，`flutter analyze` 0 issue。）
 更早见 `git log` 或应用内更新日志。
 
 ## 分支与发布（2026-09-21 用户定，从 0.9.4 起照此办）
@@ -200,7 +201,7 @@ features/widget/            桌面小组件的快照生成与投递（原生侧�
 ## 构建 / 测试 / 发布
 - 本沙箱：每次 pwsh 先 `. C:\...\shiftassistant\tools\build-env.ps1`（设 JAVA_HOME/ANDROID_HOME/PUB_CACHE 等到 `toolchain/`）。注意 `tools/` 与 `toolchain/` 已 gitignore，**不在 GitHub 仓库内**；他人克隆后按 `BUILD.md` 自装 Flutter/JDK/SDK。
 - 改表后：`dart run build_runner build --delete-conflicting-outputs`。
-- 验收标准：`flutter analyze` 0 error / 0 warning（约 4 条 info 提示可容忍）；`flutter test` 全绿（当前 **1187** 条，只增不减 —— v0.8.8 删掉随 `WidgetTier` 一起作废的五档阈值护栏、换上三张固定卡的结构护栏，是等量替换）。视觉工装另算：`flutter test tool/visual/`。
+- 验收标准：`flutter analyze` 0 error / 0 warning（约 4 条 info 提示可容忍）；`flutter test` 全绿（当前 **1188** 条，只增不减 —— v0.8.8 删掉随 `WidgetTier` 一起作废的五档阈值护栏、换上三张固定卡的结构护栏，是等量替换）。视觉工装另算：`flutter test tool/visual/`。
 - 构建：`flutter build apk --release --target-platform android-arm64` → `app/build/app/outputs/flutter-apk/app-release.apk`（**切 arm64 单 ABI**，APK 从 ~60MB 降到 ~21MB；仅 64 位设备）。
 - 分发：复制到 `dist/倒班助手Pro-vX.Y.Z.apk`，用 `aapt2 dump badging` 校验 versionName/versionCode 与包名。
 - 一键发布（GitHub Releases）：`scripts/release.ps1`。
@@ -222,6 +223,13 @@ features/widget/            桌面小组件的快照生成与投递（原生侧�
 - 发布收尾：commit + `git tag vX.Y.Z` + `git push`（分支 + tag）之后，再跑 `scripts\release.ps1 -SkipConfirm` 把 APK 挂到 GitHub Release；发布说明先写到 `tools\gh\release-notes-vX.Y.Z.md`（脚本会自动复用），末位非 0 自动标为「预发布测试版」。
 
 ## 最近改动
+- **v0.14.1**（测试版 · 日历格子重做）：用户 2026-10-25 发了一张别的 App 的日历截图（`1000068852-5.jpg`），说「日历格子我想要这种效果」。盘问 12 条定案（`docs/decisions-calendar-cell.md`）。
+  **① 格子只留「日期 + 时段胶囊」**：一天几个班次时段就几个**实心胶囊**（班次色做底、白字、`6-8` / `22-0` 式无冒号 —— `ShiftSegment.cellLabel` 新纯函数，跨午夜写钟面、无前导零）；**已结束的时段变淡（alpha 0.35）、未结束保持实色** —— 深浅编码时间远近，参考图「灰 = 已过 / 蓝 = 未结束」用班次色替代。
+  **② 行内等高 + 内容自适应**：`_rowHeights` 数组（行高 = 该行最多胶囊数 × 单胶囊高 + 日期 + 标签 + 内缩 + 呼吸 6，乘 `textScaler`，小窗/特大档不溢出）；坐标换算从均分 `cellH` 改为**行高累加** —— 新增 `_rowTop` / `_rowFromY` / `_visualRowToY` / `_yToVisualRow` / `_gridContentH`，`_cellRect` / `_dateFromPosition` / `_blockPlacement`（块高 = 目标行实际行高，不是均分 cellH —— 拖拽吸附测试抓到的）/ 水带 `rangeBandPath`（加 `rowHeights` 参数）/ `_syncBlockFlight` / `_publishFrame` 全部适配。
+  **③ 格子里保留三个小标记**：节假日/调休小标签（`L10n.holidayTag` / `makeupTag`，红/橙）、右上「已调班」点、今天深色选中框（日期主色加粗）。
+  **④ 新增「今日详情卡」`_infoCard`**（竖屏网格下方 / 宽屏右栏）：从格子移出的农历（含节假日标记）、倒计时（`_countdownLine`）、已调班徽章、班次名 + 时段、本月统计（`monthTallyFor`）都在这里；**选中哪天讲哪天**。0.13.0 曾删过信息卡（D31），这版恢复但做成简洁版 —— 不含其他班组与待办徽章（用户选 A）。
+  **⑤ 删掉的死代码**：`_countdownText` / `_rangeLabel` / `_cellDesignH` / l10n `cellShiftCount`（格子不再显示倒计时/首末时段/岗次数）。
+  **⑥ 测试**：`ShiftSegment.cellLabel` 单测（无前导零、跨午夜、24 小时班）；`calendar_screen_test` 改两条（「宽屏字更大」→「固定字号」—— 格子字不再随 cellH 缩放；「拖一格高」→ 真实位移 —— 行高不同了；窄屏「今天」限定顶栏 —— 信息卡也有今天徽章了）；拖拽吸附修正了 `_blockPlacement` 的块高 bug。版本 `0.13.0+181` → **`0.14.1+182`**。
 - **v0.13.0**（**正式稳定版** · 归纳本分支 0.12.4~0.13.0 十八个提交 ＋ 同轮并入上游 v0.12.2 / v0.12.3）。
   **① 薪资重构（D1~D3）**：「一条包月配置」改成「**逐月月薪 ＋ 逐日加项 ＋ 多条实发**」—— 按月设月薪、一颗「加项 100」快捷按钮（`statsExtraQuick100`）、一个月可有任意条实发记录，「实际到手」按逐日算。schema v18 段（`payroll_settings_rows` → `payroll_monthly_rows` ＋ `payroll_record_rows` 主键加 `seq`）与 v17 段（统计与薪资新表）相继承接。
   **② 值班制模板「上 2 休 8」**：一天 12 个 2 小时班次、5 个班组各错开 2 小时（`teamOffsets` 按周期长度均分），班次名直接写时间段。

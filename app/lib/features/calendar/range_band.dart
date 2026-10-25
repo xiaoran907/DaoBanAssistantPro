@@ -75,8 +75,29 @@ Path rangeBandPath({
   required bool movingEnd,
   double? tipCol,
   double inflate = 0,
+  // 行内等高（v0.14）：传 [rowHeights] 时按「第 row 行的实际高」画，
+  // 否则退回单一 [cellH]（既有调用与测试不变）。
+  List<double>? rowHeights,
 }) {
   final Path path = Path();
+  double rowTop(int row) {
+    if (rowHeights != null && row < rowHeights.length) {
+      var top = weekdayH;
+      for (var i = 0; i < row; i++) {
+        top += rowHeights[i];
+      }
+      return top;
+    }
+    return weekdayH + row * cellH;
+  }
+
+  double rowH(int row) {
+    if (rowHeights != null && row < rowHeights.length) {
+      return rowHeights[row];
+    }
+    return cellH;
+  }
+
   for (int i = 0; i < runs.length; i++) {
     final ({int row, int firstCol, int lastCol}) run = runs[i];
     final bool isFirst = i == 0;
@@ -107,9 +128,9 @@ Path rangeBandPath({
           // 收掉之后带子恒为 `cellH − 4`（`inset` = `gapHair` = 2），外面那圈 2px
           // 描边再各占 1px，合计 `cellH − 2` —— **一像素都不越界**。
           // 横向照旧鼓：那个方向没有邻居，越出去只是压住两边的留白。
-          weekdayH + run.row * cellH + inset,
+          rowTop(run.row) + inset,
           right + inflate,
-          weekdayH + (run.row + 1) * cellH - inset),
+          rowTop(run.row) + rowH(run.row) - inset),
       topLeft: Radius.circular(isFirst ? endRadius : 0),
       bottomLeft: Radius.circular(isFirst ? endRadius : 0),
       topRight: Radius.circular(isLast ? endRadius : 0),

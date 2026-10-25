@@ -85,6 +85,7 @@ class CalendarRangeBand extends StatefulWidget {
     required this.accent,
     required this.isDark,
     this.onTipPos,
+    this.rowHeights,
   });
 
   /// 网格盒（带子的坐标就长在这上面：`hPad` / `weekdayH` 是它内部的偏移）。
@@ -93,6 +94,9 @@ class CalendarRangeBand extends StatefulWidget {
   final double cellH;
   final double hPad;
   final double weekdayH;
+
+  /// 行内等高（v0.14）：每行实际高度；缺省 = 单一 [cellH]。
+  final List<double>? rowHeights;
 
   /// 吸附到格的那几段（`rangeRowRuns` 给的）。
   final List<({int row, int firstCol, int lastCol})> runs;
@@ -307,6 +311,7 @@ class _CalendarRangeBandState extends State<CalendarRangeBand>
         movingEnd: widget.movingEnd,
         tipCol: tipPos,
         inflate: CalendarRangeBand.protrude * _lift.value,
+        rowHeights: widget.rowHeights,
       ),
       stamp: (
         widget.runs.length,
@@ -327,7 +332,12 @@ class _CalendarRangeBandState extends State<CalendarRangeBand>
       bulge: _bulge.value,
       motion: _ring.value.clamp(0.0, 1.0),
       motionAngleDeg: _motionAngle,
-      rimScale: (widget.cellH - 2 * inset) / AppTokens.lensRimRefCapsuleH,
+      rimScale: (widget.rowHeights == null
+              ? widget.cellH
+              : widget.rowHeights!.reduce((a, b) => a + b) /
+                  widget.rowHeights!.length -
+                  2 * inset) /
+          AppTokens.lensRimRefCapsuleH,
     );
 
     return SizedBox(

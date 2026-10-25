@@ -23,6 +23,7 @@ import '../../core/widgets/glass_sheet_header.dart';
 import '../../core/widgets/glass_snackbar.dart';
 import '../../data/app_repository.dart';
 import '../../domain/lunar_info.dart';
+import '../../domain/day_summary.dart';
 import '../../domain/schedule_chain.dart';
 import '../../domain/shift_rotation.dart';
 import '../../state/app_settings.dart';
@@ -141,6 +142,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   double _visualRow = 0; // 选中块视觉行（连续小数，拖动时用）
   double _grabCol = 0; // 手指相对选中块左缘的抓取偏移（列）
   double _grabRow = 0; // 手指相对选中块上缘的抓取偏移（行）
+
+  /// 当月每行网格的实际高度（行内等高：该行最多几个胶囊就多高）。
+  /// 由 `_dayRows` 每帧算一次，坐标换算（点选 / 拖选 / 玻璃块 / 水带）都读它。
+  List<double> _rowHeights = const [];
 
   /// 选中块的拖动速度（px/s，逻辑像素）—— 帧间差分 ÷ 真实帧间隔（`lensVelocityStep`，
   /// 一处实现、带低通）。**只有液态档那枚块读它**：标准档那枚是等比放大，不吃速度。
@@ -469,6 +474,61 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   /// 本月网格占几行（含月初的空格）。
   int get _weekRows => (_leading + _daysInMonth + 6) ~/ 7;
 
+  /// 第 [row] 行的顶部 Y（周标题之下累加行高）。
+  double _rowTop(int row) {
+    if (_rowHeights.length != _weekRows) return _weekdayH + row * 58; // 还没算出来
+    var top = _weekdayH;
+    for (var i = 0; i < row && i < _rowHeights.length; i++) {
+      top += _rowHeights[i];
+    }
+    return top;
+  }
+
+  /// 网格内容总高度（周标题 + 各行累加）。
+  double get _gridContentH {
+    if (_rowHeights.length != _weekRows) return _weekdayH + _weekRows * 58;
+    return _weekdayH + _rowHeights.fold(0.0, (a, b) => a + b);
+  }
+
+  /// Y 坐标 → 行号（越界返回 -1 或 _weekRows）。
+  int _rowFromY(double y) {
+    if (y < _weekdayH) return -1;
+    if (_rowHeights.length != _weekRows) {
+      return ((y - _weekdayH) / 58).floor();
+    }
+    var top = _weekdayH;
+    for (var r = 0; r < _rowHeights.length; r++) {
+      if (y < top + _rowHeights[r]) return r;
+      top += _rowHeights[r];
+    }
+    return _rowHeights.length;
+  }
+
+  /// 连续视觉行 → Y（拖拽时块在行间按比例走）。
+  double _visualRowToY(double visualRow) {
+    final r0 = visualRow.floor().clamp(0, _weekRows - 1);
+    final r1 = (r0 + 1).clamp(0, _weekRows - 1);
+    final frac = (visualRow - r0).clamp(0.0, 1.0);
+    return _rowTop(r0) + (_rowTop(r1) - _rowTop(r0)) * frac;
+  }
+
+  /// Y → 连续视觉行（反向，拖拽跟手用）。
+  double _yToVisualRow(double y) {
+    if (_rowHeights.length != _weekRows) {
+      return (y - _weekdayH) / 58;
+    }
+    if (y <= _weekdayH) return 0;
+    var top = _weekdayH;
+    for (var r = 0; r < _rowHeights.length; r++) {
+      if (y < top + _rowHeights[r]) {
+        final frac = ((y - top) / _rowHeights[r]).clamp(0.0, 1.0);
+        return r + frac;
+      }
+      top += _rowHeights[r];
+    }
+    return _rowHeights.length.toDouble();
+  }
+
   /// 某个日期在网格中的槽位矩形；不在本月返回 null。
   ///
   /// 多选态那条水带也用它 —— 它要的是「会动的那一头在哪一格」。
@@ -479,7 +539,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final row = index ~/ 7;
     final col = index % 7;
     return Rect.fromLTWH(
-        _hPad + col * cellW, _weekdayH + row * cellH, cellW, cellH);
+        _hPad + col * cellW, _rowTop(row), cellW, _rowHeights[row]);
   }
 
   Rect? _selectedRect(double cellW, double cellH) =>
@@ -488,8 +548,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   /// 手指位置 → 那一格的日期（越界 / 空格 / 不是本月都返回 null）。
   DateTime? _dateFromPosition(Offset pos, double cellW, double cellH) {
     final col = ((pos.dx - _hPad) / cellW).floor();
-    final row = ((pos.dy - _weekdayH) / cellH).floor();
-    if (col < 0 || col > 6 || row < 0) return null;
+    final row = _rowFromY(pos.dy);
+    if (col < 0 || col > 6 || row < 0 || row >= _weekRows) return null;
     final index = row * 7 + col;
     if (index < _leading) return null;
     final day = index - _leading + 1;
@@ -769,6 +829,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               // 小窗（isShort）从前在这里隐藏网格给信息卡让位；卡已删（D31），
               // 那个理由跟着消失 —— 网格任何时候都画（D36 的处方，先落这一半）。
               grid,
+              // v0.14 恢复：选中那天的详情卡（信息从格子移来这里）。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppTokens.spaceLg, AppTokens.spaceSm, AppTokens.spaceLg, AppTokens.spaceMd),
+                child: _infoCard(context, chain),
+              ),
             ],
           );
         })),
@@ -784,8 +850,198 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   double _railWidth(AppLayout layout) =>
       (layout.availableWidth * 0.27).clamp(280.0, 340.0);
 
-  /// 宽屏右栏（v0.13：今日信息卡已删，信息合并到格子里）。
-  Widget _sideRail(BuildContext context, ScheduleChain? chain) => const SizedBox.shrink();
+  /// 宽屏右栏（v0.14 恢复：选中那天的详情卡，信息从格子移来这里）。
+  ///
+  /// 0.13.0 曾把信息卡删掉、信息合并进格子（那版格子三行：日期/首末时段/农历）；
+  /// v0.14 格子改成参考图样式（日期 + 时段胶囊列表），从格子里移出的农历、倒计时、
+  /// 已调班、节假日与班次名都在这一张卡里补上 —— 格子回答「哪天、几点」，
+  /// 卡片回答「还有什么细节」。
+  Widget _sideRail(BuildContext context, ScheduleChain? chain) =>
+      _infoCard(context, chain);
+
+  /// 选中那天的详情卡（竖屏底部 / 宽屏右栏）。
+  Widget _infoCard(BuildContext context, ScheduleChain? chain) {
+    final lunar = lunarOf(_selected);
+    final shifts = chain?.shiftOn(_selected) ?? const [];
+    final isToday = isSameDay(_selected, dateOnly(DateTime.now()));
+    final muted = AppTokens.inkMuted(context);
+    final primary = Theme.of(context).colorScheme.primary;
+    final daySchedule = chain?.scheduleOn(_selected);
+    final isAdjusted =
+        daySchedule?.dayOverrides.containsKey(dayNumber(_selected)) ?? false;
+
+    return GlassTile(
+      translucentFill: false,
+      padding: const EdgeInsets.fromLTRB(
+          AppTokens.spaceLg, AppTokens.spaceMd, AppTokens.spaceLg, AppTokens.spaceMd),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 日期行 + 今天徽章。
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: shifts.isNotEmpty ? Color(shifts.first.color) : primary,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusS),
+                ),
+              ),
+              const SizedBox(width: AppTokens.gapIconTextLg),
+              Flexible(
+                child: Text(L10n.monthDay(_selected),
+                    maxLines: 2,
+                    style: AppTokens.sectionTitle),
+              ),
+              if (isToday) ...[
+                const SizedBox(width: AppTokens.spaceSm),
+                _todayBadge(context),
+              ],
+            ],
+          ),
+          // 班次列表：每个班次的每个时段段一行（色点 + 班次名 + 时段）。
+          if (shifts.isNotEmpty) ...[
+            const SizedBox(height: AppTokens.spaceSm),
+            for (final shift in shifts) ...[
+              _shiftRow(context, shift),
+              const SizedBox(height: AppTokens.gapHair),
+            ],
+          ],
+          // 农历（含节假日标记）。
+          const SizedBox(height: AppTokens.spaceXs),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              lunar.isLegalHoliday
+                  ? '${lunar.shortLabel} · 法定节假日'
+                  : lunar.isMakeupWorkday
+                      ? '${lunar.shortLabel} · 调休上班'
+                      : lunar.shortLabel,
+              maxLines: 1,
+              style: AppTokens.rowSecondary.copyWith(
+                color: lunar.isLegalHoliday
+                    ? AppTokens.holiday
+                    : lunar.isMakeupWorkday
+                        ? Colors.orange.shade700
+                        : muted,
+              ),
+            ),
+          ),
+          // 今天：倒计时。
+          if (isToday) ...[
+            const SizedBox(height: AppTokens.gapHair),
+            Text(_countdownLine(shifts),
+                maxLines: 1,
+                style: AppTokens.labelSecondary.copyWith(color: primary)),
+          ],
+          // 已调班徽章。
+          if (isAdjusted) ...[
+            const SizedBox(height: AppTokens.spaceXs),
+            _adjustedBadge(context, primary),
+          ],
+          // 本月统计。
+          const SizedBox(height: AppTokens.spaceSm),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              monthTallyFor(chain, _month) ?? '',
+              maxLines: 1,
+              style: AppTokens.labelSecondary.copyWith(color: muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 班次一行：色点 + 班次名 + 该班次所有时段段（每段一个 `6-8` 式文本）。
+  Widget _shiftRow(BuildContext context, ShiftClass shift) {
+    final segments = shift.allSegments;
+    final timeText = segments
+        .map((s) => s.cellLabel)
+        .join(' / ');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: AppTokens.padChipV),
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+                color: Color(shift.color), shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: AppTokens.gapIconText),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(shift.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTokens.rowPrimary),
+              if (timeText.isNotEmpty) ...[
+                const SizedBox(height: AppTokens.gapHair),
+                Text(timeText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTokens.labelSecondary),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 今天徽章（信息卡日期行旁）。
+  Widget _todayBadge(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.spaceSm, vertical: AppTokens.padChipV),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary,
+          borderRadius: BorderRadius.circular(AppTokens.radiusL),
+        ),
+        child: Text(L10n.today,
+            style: AppTokens.microStrong.copyWith(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+      );
+
+  /// 「已调班」徽章（信息卡班次行尾巴）。
+  Widget _adjustedBadge(BuildContext context, Color primary) => Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.spaceSm, vertical: AppTokens.padChipV),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(AppTokens.radiusL),
+          border: Border.all(color: primary.withValues(alpha: 0.45)),
+        ),
+        child: Text(L10n.adjustedBadge,
+            style: AppTokens.microStrong.copyWith(
+                color: primary, fontWeight: FontWeight.w700)),
+      );
+
+  /// 今天格倒计时文本（信息卡用）：距下一段岗次开始还有多久。
+  /// 所有岗都过完（或没有未来的岗）时返回「全部结束」。
+  String _countdownLine(List<ShiftClass> shifts) {
+    final now = DateTime.now();
+    final nowMinute = now.hour * 60 + now.minute;
+    for (final shift in shifts) {
+      for (final seg in shift.allSegments) {
+        if (seg.startMinute > nowMinute) {
+          final minutesUntil = seg.startMinute - nowMinute;
+          return minutesUntil < 60
+              ? L10n.countdownMin(minutesUntil)
+              : L10n.countdownH(minutesUntil ~/ 60);
+        }
+      }
+    }
+    return L10n.countdownOver;
+  }
 
   /// 顶栏那一行装不装得下 —— **按排版实测**，不拿宽度阈值猜（理由见 `_header`）。
   ///
@@ -1287,18 +1543,22 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                 // 面板**只留左右 + 顶部**：下面那句是共享空态件
                 // （`EmptyState`，v0.12.0 收口），它自带 `all(spaceLg)` 留白 ——
                 // 面板再留一份纵向就会叠成 `12 + 16`。标题自己留顶部那 12。
-                child: GlassPanel(
-                  solid: true,
-                  padding: const EdgeInsets.fromLTRB(
-                      AppTokens.spaceLg, AppTokens.spaceMd, AppTokens.spaceLg, 0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(L10n.noScheduleHere,
-                          textAlign: TextAlign.center,
-                          style: AppTokens.sectionTitle),
-                      EmptyState(L10n.noScheduleHereHint),
-                    ],
+                // `SingleChildScrollView`：小窗里网格被信息卡挤矮、空态内容
+                // 放不下时滚动而不是溢出（v0.14 行高变小后网格更矮、这里更常见）。
+                child: SingleChildScrollView(
+                  child: GlassPanel(
+                    solid: true,
+                    padding: const EdgeInsets.fromLTRB(
+                        AppTokens.spaceLg, AppTokens.spaceMd, AppTokens.spaceLg, 0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(L10n.noScheduleHere,
+                            textAlign: TextAlign.center,
+                            style: AppTokens.sectionTitle),
+                        EmptyState(L10n.noScheduleHereHint),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1335,6 +1595,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final cellW = (constraints.maxWidth - _hPad * 2) / 7;
+        // 行内等高：先把每行高度算出来（`_cellRect` / `_selectedRect` 读它）。
+        _computeRowHeights(context, chain);
         final cellH = calendarCellHeight(
           cellW: cellW,
           // 预留 2px：cellH 按剩余空间均分算出来后，网格内容的高度就
@@ -1357,11 +1619,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             ? _hPad + _visualCol * cellW
             : (selectedRect?.left ?? 0);
         final blockTop = _dragActive
-            ? _weekdayH + _visualRow * cellH
+            ? _visualRowToY(_visualRow)
             : (selectedRect?.top ?? 0);
         // 目标变了就起一次滑行。**必须在算 `lensCenter` 之前**：挤压场用的是
         // 「这一帧块在哪儿」，而那正是它更新出来的。
-        _syncBlockFlight(showBlock, Offset(blockLeft, blockTop), cellW, cellH);
+        _syncBlockFlight(
+            showBlock,
+            Offset(blockLeft, blockTop),
+            cellW,
+            _gridContentH / math.max(1, _weekRows));
 
         // ── 多选态那条水带（只有液态档画）────────────────────────────────
         // 长按的落点（anchor）固定不动，动的是 focus —— 往回拖时它就是**起端**。
@@ -1416,13 +1682,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             double startCol, startRow;
             if (rect != null) {
               startCol = (rect.left - _hPad) / cellW;
-              startRow = (rect.top - _weekdayH) / cellH;
+              startRow = _yToVisualRow(rect.top);
             } else {
               startCol =
                   ((d.localPosition.dx - _hPad) / cellW).floor().toDouble();
-              startRow = ((d.localPosition.dy - _weekdayH) / cellH)
-                  .floor()
-                  .toDouble();
+              startRow = _yToVisualRow(d.localPosition.dy).floorToDouble();
             }
             setState(() {
               _pressed = true;
@@ -1430,7 +1694,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               _visualCol = startCol;
               _visualRow = startRow;
               _grabCol = (d.localPosition.dx - _hPad) / cellW - startCol;
-              _grabRow = (d.localPosition.dy - _weekdayH) / cellH - startRow;
+              _grabRow = _yToVisualRow(d.localPosition.dy) - startRow;
               // 速度从这一格起算：上一段拖动的尾巴不许再算进来。
               _vx = 0;
               _vy = 0;
@@ -1441,7 +1705,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           },
           onPanUpdate: (d) {
             final double col = (d.localPosition.dx - _hPad) / cellW - _grabCol;
-            final double row = (d.localPosition.dy - _weekdayH) / cellH - _grabRow;
+            final double row = _yToVisualRow(d.localPosition.dy) - _grabRow;
             // 速度：**位置的帧间差分 ÷ 真实的帧间隔**（`lensVelocityStep`，带低通）。
             // 与底栏 / 分段器 / 开关 / 响铃那枚药丸同一套 —— **别退回 `delta × 60`**：
             // 120Hz 上每帧位移只有一半、形变也就只有一半（v0.10.6 与 v0.10.14 各踩过一次）。
@@ -1461,7 +1725,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                     previous: _vx);
                 _vy = lensVelocityStep(
                     deltaPage: row - _lastVelRow,
-                    itemW: cellH,
+                    itemW: _gridContentH / math.max(1, _weekRows),
                     dt: stamp - prev,
                     previous: _vy);
               }
@@ -1473,10 +1737,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             _visualRow = row;
             if (liquidGlassActive.value) {
               // 位置与速度每帧都在变 —— 走通知源，**整页不跟着重建**。
-              _flightPos = Offset(_hPad + col * cellW, _weekdayH + row * cellH);
+              _flightPos = Offset(_hPad + col * cellW, _visualRowToY(row));
               _publishFrame(
                   center: Offset(_flightPos.dx + cellW / 2,
-                      _flightPos.dy + cellH / 2));
+                      _flightPos.dy +
+                          _rowHeights[_visualRow.round().clamp(
+                                  0, _rowHeights.length - 1)] /
+                              2));
               // **吸附到的那一格真的变了才重建整页**：那一格的班次胶囊要画成实心，
               // 而那是「标题级」的状态。与 `onLongPressMoveUpdate` 同一条纪律
               // —— 每帧重建整页正是这一轮要消掉的东西。
@@ -1586,12 +1853,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                 if (showBand)
                   Positioned.fill(
                     child: CalendarRangeBand(
-                      size: Size(2 * _hPad + 7 * cellW,
-                          _weekdayH + _weekRows * cellH),
+                      size: Size(2 * _hPad + 7 * cellW, _gridContentH),
                       cellW: cellW,
                       cellH: cellH,
                       hPad: _hPad,
                       weekdayH: _weekdayH,
+                      rowHeights: _rowHeights,
                       runs: rangeRowRuns(
                           from: bandAnchor!, to: bandFocus!, month: _month),
                       movingEnd: daysBetween(bandAnchor, bandFocus) >= 0,
@@ -1613,7 +1880,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                       },
                     ),
                   ),
-                if (showBlock) _blockPlacement(context, cellW, cellH, blockLeft, blockTop),
+                if (showBlock)
+                  _blockPlacement(
+                      context,
+                      cellW,
+                      // 块高 = **目标行的实际行高**（行内等高下每行不同，用均分的
+                      // cellH 会让块中心偏离该格中心 —— 真机拖拽测试抓到的）。
+                      _dragActive
+                          ? _rowHeights[_visualRow.round().clamp(
+                              0, _rowHeights.length - 1)]
+                          : (_selectedRect(cellW, cellH)?.height ?? cellH),
+                      blockLeft,
+                      blockTop),
               ],
             ),
           ),
@@ -1659,29 +1937,102 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     );
   }
 
-  List<Widget> _dayRows(
-      BuildContext context, double cellW, double cellH, ScheduleChain? chain) {
+  /// 算当月每行高度（行内等高：该行最多几个胶囊就多高），并写 [_rowHeights]。
+  ///
+  /// 必须在 `_gridBody` 的 `_selectedRect` **之前**跑 —— `_cellRect` 读
+  /// `_rowHeights`，那会儿要是空的（`const []`）就当场越界。
+  List<double> _computeRowHeights(BuildContext context, ScheduleChain? chain) {
+    // 字号档位（0.9 / 1.0 / 1.1 / 1.2）直接放大行高里的字相关部分 ——
+    // 特大档下格子内容变高，行高跟不上就 bottom overflow（真机测出来的）。
+    final ts = MediaQuery.textScalerOf(context).scale(1.0);
+    final dateH = 15 * ts;
+    final chipH = 18 * ts;
+    final chipGap = ts;
+    final tagH = 13 * ts;
+    final inset = 4.0;
+    // 先把当月每天的胶囊数（= 全部班次的所有时段段数）算出来，用于行内等高。
+    // 参考图样式：一天几个时段就几个胶囊，行高按**该行最多那天**定。
+    final cellShiftCounts = <int>[];
+    for (var d = 1; d <= _daysInMonth; d++) {
+      final date = DateTime(_month.year, _month.month, d);
+      final shifts = chain?.shiftOn(date) ?? const [];
+      cellShiftCounts.add(
+          shifts.fold(0, (n, s) => n + s.allSegments.length));
+    }
+
+    // 每行最大胶囊数（含月初空格按 0 计）。
+    final rowMaxShifts = <int>[];
+    for (var r = 0; r < _weekRows; r++) {
+      var max = 0;
+      for (var c = 0; c < 7; c++) {
+        final idx = r * 7 + c - _leading;
+        if (idx >= 0 && idx < _daysInMonth) {
+          max = math.max(max, cellShiftCounts[idx]);
+        }
+      }
+      rowMaxShifts.add(max);
+    }
+
+    // 每行高度 = 日期行 + 标签行（可无）+ 该行最多胶囊数 × 单胶囊高 + 间隔。
+    // 基准是**内容自然高**（不再是旧设计的 `_minCellH` —— 那 58 是三行字的下限，
+    // 新格子只有「日期 + 胶囊」两行，58 会把小窗格子顶出视口）：
+    // 日期 `cellDateSm` 13×1.15 ≈ 15 + 间隔 2 + 胶囊 `microStrong` 12×1.15 ≈ 14
+    // + 上下 padding 2×2 = 18，每个额外胶囊 + 18 + 1；再加内缩上下各 2。
+    // 该行只要有一天是节假日 / 调休（标签在日期与胶囊之间出现），整行都要给
+    // 标签行让位 + 2 + 13 —— 行内等高要求同行同高，差出来就 bottom overflow。
+    final rowHeights = <double>[];
+    for (var r = 0; r < _weekRows; r++) {
+      final count = rowMaxShifts[r];
+      var hasTag = false;
+      for (var c = 0; c < 7; c++) {
+        final idx = r * 7 + c - _leading;
+        if (idx >= 0 && idx < _daysInMonth) {
+          final d = DateTime(_month.year, _month.month, idx + 1);
+          final lunar = lunarOf(d);
+          if (lunar.isLegalHoliday || lunar.isMakeupWorkday) {
+            hasTag = true;
+            break;
+          }
+        }
+      }
+      final base = (dateH +
+              2 * ts +
+              (count > 0 ? count * chipH + (count - 1) * chipGap : 0) +
+              (hasTag ? 2 * ts + tagH : 0) +
+              inset +
+              10) // 呼吸余量：字号 / 行高在部分设备上会略微超估（曾 6，360dp small 档差 0.18px）。
+          .toDouble();
+      // 兜底：连日期都装不下的极端小窗（200 宽）给个下限。
+      rowHeights.add(math.max(base, 30));
+    }
+    _rowHeights = rowHeights;
+    return rowHeights;
+  }
+
+  List<Widget> _dayRows(BuildContext context, double cellW, double cellH,
+      ScheduleChain? chain) {
     // 比「同一天」用 `isSameDay` 而不是 `==`：`dateOnly` 是 UTC 日期、这里的
     // `date` 是本地日期，`DateTime.==` 连 `isUtc` 一起比，`==` 恒为假
     // （「今天」的日期因此一直没加粗过）。
     final now = DateTime.now();
     final today = dateOnly(now);
+    final rowHeights = _computeRowHeights(context, chain);
+
     final cells = <Widget>[];
     for (var i = 0; i < _leading; i++) {
-      cells.add(SizedBox(width: cellW, height: cellH));
+      cells.add(SizedBox(width: cellW, height: rowHeights[0]));
     }
     for (var d = 1; d <= _daysInMonth; d++) {
       final date = DateTime(_month.year, _month.month, d);
+      final row = (d - 1 + _leading) ~/ 7;
+      final shifts = chain?.shiftOn(date) ?? const [];
       cells.add(_dayCell(
           context,
           date,
-          // 真值：空白表（跟随法定节假日）那套没有班次定义，这里就是空列表 ——
-          // 格子只画日期与农历，**不替它断言今天上不上班**（v0.9.16 用户反馈）。
-          // 「有没有班表在管」是另一件事，由 `chain.hasScheduleOn` 回答。
-          chain?.shiftOn(date) ?? const [],
+          shifts,
           lunarOf(date),
           cellW,
-          cellH,
+          rowHeights[row],
           isSameDay(date, today),
           chain?.scheduleOn(date)?.dayOverrides.containsKey(dayNumber(date)) ??
               false,
@@ -1702,30 +2053,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     return rows;
   }
 
-  /// 磨砂卡片日期格。
+  /// 磨砂卡片日期格（v0.14 重写：参考图样式）。
   ///
-  /// 排布按**这天有没有班次**分两种，一个方案要么整月有班次、要么整月没有，
-  /// 所以两种排布不会混在同一个月里：
+  /// 排布：日期 + 节假日/调休小标签（可选）+ **实心时段胶囊列表**。
+  /// 每个班次的每个时段段一个胶囊，文本 = 时段（`6-8` / `22-0`，见 [ShiftSegment.cellLabel]）。
   ///
-  /// 三行**全部居中**：日期 / 班次 / 农历。日历里最该一眼看到的是「哪天是什么
-  /// 班」，所以班次做成带底色的胶囊占中位，日期与农历都不抢戏。
+  /// 从格子里移走的内容（农历、倒计时、首末时段、班次名）进了底部信息卡 ——
+  /// 格子回答「哪天上什么班（几点）」，卡片回答「还有什么细节」。
   ///
-  /// 日期曾经缩到左上角当定位标记 —— 收回居中，因为格子是**圆角**矩形，左上角
-  /// 那一小块是被切掉的：日期贴着内容框的左缘，就会蹭到圆角的弧度外，看起来像
-  /// 溢出了格子（班组多、卡片更高、格子更矮时最明显）。
+  /// 时间远近用**胶囊深浅**表达（参考图「灰 = 已过期 / 蓝 = 未结束」）：
+  /// 已结束的时段胶囊降透明度（变淡），未结束的保持实色。今天与未来都是实色。
   ///
-  /// 「无班次」（「跟随法定节假日（无班次）」那套方案，以及还没建排班）只是少画
-  /// 中间那一行，三行居中的骨架不变。
-  ///
-  /// 格子里的字按**格子高度**等比缩放（[AppTokens.scaled]）：格子高是按剩余
-  /// 空间算出来的，长高时字不跟着长，格子里就空出一大块、字显得小。
-  ///
-  /// [solid] 表示这格的班次胶囊要画成实心（滑块当前吸附的那一格）。
+  /// 格子里的字不再按格子高度等比缩放（[AppTokens.scaled] 已不用于胶囊）：
+  /// 行高由胶囊数决定，字是固定小字号，装不下的胶囊由 FittedBox 兜底。
   ///
   /// [adjusted] 表示这天被「按天改班」覆盖过，右上角点一个小圆点。
   /// [inRange] 表示这天落在长按拖选的范围里，整格铺一层主色淡染。
   ///
-  /// [now] 是当前时间，用于今天格的倒计时计算。
+  /// [now] 是当前时间，用于胶囊深浅编码（已过期 vs 未结束）。
   ///
   /// [warp] 是液态档那枚透镜把它**内容**挤了一下的仿射变换（`null` = 不套）。
   /// 只套内容、**不套卡片**：卡片动了就成了「格子自己在扭」，而用户要的是
@@ -1734,117 +2079,94 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       LunarInfo lunar, double cellW, double cellH, bool isToday,
       bool adjusted, bool inRange,
       {required DateTime now, Offset? warpCenter}) {
-    final lunarColor = lunar.isLegalHoliday
-        ? AppTokens.holiday
-        : AppTokens.inkMuted(context);
     final primary = Theme.of(context).colorScheme.primary;
-
-    // 缩放系数按**去掉格子内缩后的可用高**算：内容排在被 `_cellInset` 收窄的
-    // 盒子里，用 cellH 直接算会让内容恒比盒子高一点点，外层的 FittedBox 每次
-    // 都缩回去一档，等于缩放没生效。
-    final s = ((cellH - _cellInset * 2) / _cellDesignH)
-        .clamp(1.0, cellMaxScale(AppLayout.of(context)));
     final contentW = cellW - _cellInset * 2;
 
-    // 第 1 行：日期 + 岗次数（同一行，日期主色、岗次数次要色）。
-    final dateStyle = AppTokens.scaled(AppTokens.cellDateSm, s).copyWith(
+    // 第 1 行：日期。今天 = 主色加粗（参考图：蓝色加粗）。
+    final dateStyle = AppTokens.cellDateSm.copyWith(
       fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
-      color: Theme.of(context).colorScheme.onSurface,
-    );
-    final countStyle = AppTokens.scaled(AppTokens.tinyLabel, s).copyWith(
-      color: AppTokens.inkMuted(context),
+      color: isToday ? primary : Theme.of(context).colorScheme.onSurface,
+      height: 1.15,
     );
     final dateLine = FittedBox(
       fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('${date.day}', maxLines: 1, style: dateStyle),
-          if (shifts.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Text(L10n.cellShiftCount(shifts.length), maxLines: 1, style: countStyle),
-          ],
-        ],
-      ),
+      child: Text('${date.day}', maxLines: 1, style: dateStyle),
     );
 
-    // 第 2 行：首末时段（非今天）或倒计时（今天）。
-    Widget? row2;
-    if (shifts.isNotEmpty) {
-      if (isToday) {
-        final countdown = _countdownText(shifts, now);
-        if (countdown != null) {
-          row2 = FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(countdown, maxLines: 1,
-                style: AppTokens.scaled(AppTokens.microStrong, s)
-                    .copyWith(color: primary)),
-          );
-        } else {
-          // 所有岗都过完，切静态（首末时段）。
-          row2 = FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(_rangeLabel(shifts), maxLines: 1,
-                style: AppTokens.scaled(AppTokens.microStrong, s)
-                    .copyWith(color: AppTokens.inkMuted(context))),
-          );
-        }
-      } else {
-        row2 = FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(_rangeLabel(shifts), maxLines: 1,
-              style: AppTokens.scaled(AppTokens.microStrong, s)
-                  .copyWith(color: AppTokens.inkMuted(context))),
-        );
+    // 第 2 行（可选）：节假日 / 调休小标签。只画「值得标出来的」：
+    // 法定节假日红、调休上班橙 —— 普通农历日不在格子里画（它进了信息卡）。
+    Widget? tagLine;
+    if (lunar.isLegalHoliday || lunar.isMakeupWorkday) {
+      final tag = lunar.isLegalHoliday ? L10n.holidayTag : L10n.makeupTag;
+      final tagColor = lunar.isLegalHoliday
+          ? AppTokens.holiday
+          : Colors.orange.shade700;
+      tagLine = FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.spaceXs, vertical: 1),
+          decoration: BoxDecoration(
+            color: tagColor.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(AppTokens.radiusS),
+          ),
+          child: Text(tag,
+              maxLines: 1,
+              style: AppTokens.tinyLabel.copyWith(
+                color: tagColor, fontWeight: FontWeight.w700)),
+        ),
+      );
+    }
+
+    // 第 3 行（可多行）：实心时段胶囊。每个班次的每个时段段一个。
+    final nowMinute = now.hour * 60 + now.minute;
+    final chips = <Widget>[];
+    for (final shift in shifts) {
+      for (final seg in shift.allSegments) {
+        final color = Color(shift.color);
+        // 已结束的时段：降透明度（参考图「灰 = 已过去」），未结束保持实色。
+        final ended = seg.endMinute <= nowMinute;
+        final chipColor =
+            ended ? color.withValues(alpha: 0.35) : color;
+        chips.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: Container(
+            key: ValueKey('day-chip-${date.day}-${shift.id}'),
+            alignment: Alignment.center,
+            width: contentW,
+            padding: const EdgeInsets.symmetric(
+                vertical: AppTokens.padChipV, horizontal: AppTokens.spaceXs),
+            decoration: BoxDecoration(
+              color: chipColor,
+              borderRadius: BorderRadius.circular(AppTokens.radiusS),
+            ),
+            // Text 在无界约束下自然宽，FittedBox 缩到胶囊内 ——
+            // 窄格子（360dp 小窗）里「18-22」这类 5 字符不会截成省略号。
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                seg.cellLabel,
+                maxLines: 1,
+                style: AppTokens.microStrong.copyWith(
+                    color: Colors.white, height: 1.15),
+              ),
+            ),
+          ),
+        ));
       }
     }
 
-    final lunarStyle = AppTokens.scaled(AppTokens.tinyLabel, s);
-    final lunarLine = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text.rich(
-          TextSpan(
-            children: [
-              if (lunar.isMakeupWorkday)
-                TextSpan(
-                  text: '班 ',
-                  style: lunarStyle
-                      .copyWith(color: primary, fontWeight: FontWeight.w700),
-                ),
-              TextSpan(text: lunar.cellLabel),
-            ],
-          ),
-          maxLines: 1,
-          style: lunarStyle.copyWith(color: lunarColor),
-        ),
-      ),
-    );
-
-    final showLunarDay = ref.read(appSettingsProvider).showLunarDay;
-    final children = <Widget>[dateLine];
-    if (row2 != null) {
-      children.add(const SizedBox(height: AppTokens.gapHair));
-      children.add(row2);
-    }
-    if (showLunarDay) {
-      children
-        ..add(const SizedBox(height: AppTokens.gapHair))
-        ..add(lunarLine);
-    }
-
-    // 内容那一层（日期 + 岗次数 / 首末时段或倒计时 / 农历）。
-    final Widget fittedContent = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: SizedBox(
-        width: contentW,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: children,
-        ),
-      ),
+    // 内容那一层：日期 → 标签 → 胶囊列表（居中列）。
+    final children = <Widget>[
+      dateLine,
+      if (tagLine != null) ...[const SizedBox(height: AppTokens.gapHair), tagLine],
+      if (chips.isNotEmpty) ...[const SizedBox(height: AppTokens.gapHair), ...chips],
+    ];
+    final Widget fittedContent = Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: children,
     );
 
     return SizedBox(
@@ -1866,8 +2188,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   ),
                 ),
               ),
-            // 右上角的「已调班」小圆点：不再挂在胶囊上（胶囊已删），
-            // 改成挂在格子右上角。
+            // 右上角的「已调班」小圆点：挂在格子右上角。
             if (adjusted && shifts.isNotEmpty)
               Positioned(
                 right: -2,
@@ -1896,44 +2217,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
 
   /// 今天格的倒计时文本：距下一段岗次开始还有多久。
   ///
-  /// < 1h 用分钟（「距 45min」），≥ 1h 用小时（「距 2h」）。
-  /// 所有岗都过完（或没有未来的岗）时返回 `null`，调用方切静态布局。
-  String? _countdownText(List<ShiftClass> shifts, DateTime now) {
-    final nowMinute = now.hour * 60 + now.minute;
-    for (final shift in shifts) {
-      final start = shift.startMinute;
-      if (start == null) continue;
-      if (start > nowMinute) {
-        final minutesUntil = start - nowMinute;
-        if (minutesUntil < 60) {
-          return L10n.countdownMin(minutesUntil);
-        } else {
-          return L10n.countdownH(minutesUntil ~/ 60);
-        }
-      }
-    }
-    return null;
-  }
-
-  /// 首末时段标签：「0-2→20-22」（不带前导零）。
-  ///
-  /// 单个岗次时退化为该岗次的时段（「14-22」）。
-  String _rangeLabel(List<ShiftClass> shifts) {
-    if (shifts.isEmpty) return '';
-    if (shifts.length == 1) {
-      final s = shifts.single;
-      final sh = (s.startMinute ?? 0) ~/ 60;
-      final eh = ((s.endMinute ?? 0) % 1440) ~/ 60;
-      return '$sh-$eh';
-    }
-    final first = shifts.first;
-    final last = shifts.last;
-    final fs = (first.startMinute ?? 0) ~/ 60;
-    final fe = ((first.endMinute ?? 0) % 1440) ~/ 60;
-    final ls = (last.startMinute ?? 0) ~/ 60;
-    final le = ((last.endMinute ?? 0) % 1440) ~/ 60;
-    return '$fs-$fe→$ls-$le';
-  }
+  /// 首末时段标签已删：时段胶囊每个段一格，文本由 [ShiftSegment.cellLabel] 给出。
+  /// 倒计时已移到今日信息卡（v0.14）。
 
   BoxDecoration _cardDecoration(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -2110,18 +2395,6 @@ Widget _cornerDot({required Key key, required Color color}) => Container(
 // 格子高宽比：0.78 = 自然比例，0.62 = 「不许再瘦」的下限比例（越小格子越高）。
 const double _cellAspect = 0.78;
 const double _cellAspectMin = 0.62;
-
-/// 格子内容在**设计尺寸**下的自然高度：日期 `cellDateSm` 13×1.15 + `gapHair` +
-/// 班次胶囊（`cellShift` 13×1.15 + 上下 `padChipV` 各 3 + 描边 1×2）+ `gapHair`
-/// + 农历 `tinyLabel` 11×1.15 ≈ 54.6。
-///
-/// v0.12.5 开始多胶囊堆叠，设计高从 55 涨到 80 —— 单胶囊行高 22.95，
-/// 上限 3 个胶囊时共 3 行 ≈ 70，再加日期、农历、间隔 ≈ 85。取 80 让单胶囊时
-/// 字略大（s > 1），多胶囊时字略小（s < 1）。
-///
-/// 格子里的字按 `(cellH − 内缩) / 这个值` 等比缩放（见 `_dayCell`），所以它就是
-/// 「缩放系数 1.0」的那把尺子。
-const double _cellDesignH = 80;
 
 /// 格子字号的缩放上限。再大就喧宾夺主：格子被字填满、格子之间的呼吸感没了。
 /// 1.25 是 v0.7.2 从 1.35 调下来的（配合 `cellShift` 15→13），单字胶囊的字号

@@ -459,6 +459,8 @@ class L10n {
   static String get teamSettings => t('班组设置', 'Teams');
   static String get teamName => t('班组名', 'Team name');
   static String get today => t('今天', 'Today');
+  static String get adjustedBadge => t('已调班', 'Adjusted');
+  static String get countdownOver => t('今日岗次已全部结束', 'All shifts done today');
   static String get myTeam => t('我的班', 'My team');
   static String get setAsMine => t('设为我', 'Set as mine');
   static String get teamHint => t('为每个班组选一个「周期起始日」——那天它从周期第 1 天开始；「设为我」选中你所在的班。', 'Give each team a "cycle start date" — on that day it begins at cycle day 1; "Set as mine" marks your team.');
@@ -896,8 +898,11 @@ class L10n {
   /// 直接取 `ShiftClass.shortLabel`，日历格子里已经在用那一套，中英文各自成立）。
   static String get monthTally => t('本月', 'This month');
 
-  /// 日历格子第 1 行右半：这天有几段岗次。
-  static String cellShiftCount(int n) => isEn ? '$n sh' : '$n 岗';
+  /// 日历格子里「法定节假日」小标签（参考图：红底小字）。
+  static String get holidayTag => t('休', 'Off');
+
+  /// 日历格子里「调休上班」小标签（参考图：橙底小字）。
+  static String get makeupTag => t('班', 'Work');
 
   /// 今天格倒计时：距下一段岗次开始还有多少分钟（< 1h 时用这一档）。
   static String countdownMin(int m) => isEn ? 'in ${m}m' : '距 ${m}min';
