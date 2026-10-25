@@ -1309,6 +1309,16 @@ class L10n {
       '这个备份来自更新的应用版本（$version）',
       'This backup comes from a newer app version ($version)');
 
+  // 「我的 → 数据」里导出 / 导入两个入口（本地 SAF 文件，不依赖网盘）。
+  static String get exportBackup => t('导出备份', 'Export backup');
+  static String get exportBackupSubtitle => t(
+      '存成一个文件，可发给新手机',
+      'Save everything to a file you can move to a new phone');
+  static String get importBackup => t('导入备份', 'Import backup');
+  static String get importBackupSubtitle => t(
+      '从备份文件恢复',
+      'Restore from a backup file');
+
   // 系统日历同步
   static String get calendarSync => t('系统日历同步', 'System calendar sync');
   static String get calendarSyncSubtitle => t(

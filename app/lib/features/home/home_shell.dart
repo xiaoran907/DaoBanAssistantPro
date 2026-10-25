@@ -20,6 +20,7 @@ import '../alarm/alarm_service.dart';
 import '../calendar/calendar_screen.dart';
 import '../profile/app_dialogs.dart';
 import '../profile/profile_screen.dart';
+import '../profile/webdav_sync.dart';
 import '../schedule/schedule_screen.dart';
 import '../stats/stats_screen.dart';
 import '../widget/widget_service.dart';
@@ -87,6 +88,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
       if (AlarmService.openTodoRequested.value) _openTodoPage();
       _maybeShowLaunchDialogs();
       _maybeAutoCheckUpdate();
+      _maybeAutoWebDavSync();
       // 冷启动由桌面小组件拉起：读一次「要跳到哪天」。
       WidgetService.consumeLaunchDay();
       // 首帧推一次快照，桌面上的卡片立刻与 App 对齐（去抖之后 340ms 发出去）。
@@ -147,6 +149,35 @@ class _HomeShellState extends ConsumerState<HomeShell>
         UpdateChecker.compareVersion(stable.version, appVersion) > 0) {
       showUpdateDialog(context, r);
     }
+  }
+
+  /// 冷启动静默自动同步（WebDAV）：只在「开了开关且配置齐全」时跑一次。
+  ///
+  /// 冲突不弹窗（等手动）、网络失败静默 —— 启动路径不该为它阻塞，也不该
+  /// 在没让用户选边的情况下改数据（`maybeAutoSync` 的注释就是这条规矩）。
+  /// 不 await：首帧之后由它自己慢慢跑，别让同步把启动闸卡住。
+  Future<void> _maybeAutoWebDavSync() async {
+    final sp = await SharedPreferences.getInstance();
+    final db = ref.read(databaseProvider);
+    await maybeAutoSync(
+      db,
+      sp,
+      sync: WebDavSync(passwords: const SecurePasswordStore()),
+      afterRestore: _afterWebDavRestore,
+    );
+  }
+
+  /// 云端覆盖本地之后的链路，与「导入数据」同一条（外观重载 → 重复待办生成
+  /// → 重排闹钟）。与 `webdav_sync_screen.dart` 的 `_afterRestore` 一字不差。
+  Future<void> _afterWebDavRestore() async {
+    await ref.read(appSettingsProvider.notifier).reload();
+    await ref.read(navSettingsProvider.notifier).reload();
+    final repo = ref.read(appRepositoryProvider);
+    final now = DateTime.now();
+    await repo.advanceRecurringTodos(
+        today: DateTime.utc(now.year, now.month, now.day));
+    await repo.pruneArchivedTodos();
+    await AlarmService.rescheduleAll(repo);
   }
 
   @override

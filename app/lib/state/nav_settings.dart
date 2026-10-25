@@ -132,6 +132,10 @@ class NavSettingsNotifier extends StateNotifier<NavTabConfig> {
   }
 
   Future<void> setEnabled(NavTabId id, bool enabled) async {
+    // 关掉最后一个 tab 会连「我的 → 清空重置」都进不去（唯一入口在
+    // 被关掉的「我的」页里）—— 用户只能重装。下限与 `toggleEnabled` 一致：
+    // 至少留一个。
+    if (!enabled && state.enabled.length <= 1) return;
     final next = state.copyWith(
       enabled: enabled
           ? {...state.enabled, id}

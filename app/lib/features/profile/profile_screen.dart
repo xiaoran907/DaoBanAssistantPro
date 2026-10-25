@@ -31,6 +31,7 @@ import '../alarm/alarm_service.dart';
 import '../calendar/schedule_management_screen.dart';
 import '../calendar/calendar_sync_service.dart';
 import 'app_dialogs.dart';
+import 'backup_service.dart';
 import 'help_center_screen.dart';
 import 'webdav_sync_screen.dart';
 
@@ -331,6 +332,26 @@ class ProfileScreen extends ConsumerWidget {
                         MaterialPageRoute(
                             builder: (_) => const WebDavSyncScreen()),
                       ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // 本地导出 / 导入：不依赖网盘，把整份数据存成一个文件。
+                  // 换手机那条帮助文案（v0.13.0 起）说的就是这两行 + WebDAV。
+                  GlassPressable(
+                    child: ListTile(
+                      leading: const Icon(Icons.file_download_outlined),
+                      title: Text(L10n.exportBackup),
+                      subtitle: Text(L10n.exportBackupSubtitle),
+                      onTap: () => BackupService.exportData(context, ref),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  GlassPressable(
+                    child: ListTile(
+                      leading: const Icon(Icons.file_upload_outlined),
+                      title: Text(L10n.importBackup),
+                      subtitle: Text(L10n.importBackupSubtitle),
+                      onTap: () => BackupService.importData(context, ref),
                     ),
                   ),
                   const Divider(height: 1),

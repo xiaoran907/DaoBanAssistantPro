@@ -50,6 +50,7 @@
 → 0.12.3(+178) 测试版（**重复待办跟排班走 + 每月多选 + 两处小改**：① 重复规则第五档「按班次」—— 从 `ScheduleChain.classChoicesFrom(今天)` 取「从今天起还可能生效」的方案班次（按名字去重、已结束时段的方案不贡献选项），按 `ShiftClass.name` 匹配 `chain.shiftOn(day)`（含按天调班、多套方案衔接、按月切法），一条规则可多选；换排班表按同名班次延续，缺名在控件与面板两处明说（用户 2026-10-22 点名要的提醒）。四个发生日查询加 `shiftNameOn` 回调、上界 400 天；生成器「只往前不回退」不变 —— 改排班后已生成在今天、今天不再匹配的那一行**留在原地**（明确接受）；② 「每月」从单日改 31 位掩码 `monthDays`，小月先夹到月末再按日期去重（选 29/30/31 的 2 月只出现一天），空规则不许保存；③ 星期选择器从会折行的 `Wrap` 改成一行七格等宽；④ 面板行尾铅笔删除；⑤ 顺带修掉「待办页新建的重复待办要等下次冷启动才排提醒」—— `rescheduleTodoReminders` 一次性 + 重复一起排；⑥ 所有改「某天上什么班」的入口（排班管理页 / 编辑页保存 / 日历调班）统一走 `AlarmService.replanAfterScheduleChange`（先 `advanceRecurringTodos` 再整链重排）。schema 14 → 15：新增 `month_days` / `shift_names`（JSON 名字数组），`month_day` 迁完删除。单测 1106 → **1141**。）
 → 0.11.21(+168) 测试版（**实心主色面换成深一档的主色**。用户 2026-10-15 从三张对照图里挑了「实色压深一档 + 白字」：新增 `AppTokens.solidAccent()`（主色明度 × 0.62、色相不动），`accentGradient` 从「原主色 0.85 → 0.50 的半透明渐变」换成「深一档的 1.0 → 0.92」—— 主按钮 / 弹窗动作钮 / 导航选中 / 分段器滑块 / 待办悬浮按钮 / 开关 / 勾选块 / 胶囊入口 / 液态档玻璃滴一处收口。白字在原主色上 teal 2.63、orange 2.55、rose 4.09 全不到 AA，现在五种主色在两档底色、两端都 ≥ 5.0。**顺带量出并修掉一件更早的事：旧填充是半透明的，压在白卡上连 primary 的尽头都只有 2.1:1。** 护栏 `design_tokens_test.dart` 换成「白字在渐变两端 × 两档底色都过 AA + 色相不变、明度更小」，反向验证过。⚠️ **这一版漏了两处、且护栏是假的绿** —— 见上面 0.11.22）
 → **0.13.0(+180) 正式稳定版**（归纳本分支 0.12.4~0.13.0 的十八个提交 ＋ 同轮并入上游 v0.12.2 / v0.12.3：**薪资改成「逐月月薪 ＋ 逐日加项 ＋ 多条实发」**、**值班制「上 2 休 8」模板**（一天 12 个 2 小时班、5 个班组错开 2 小时）、**周期里一天多段班**、**日历页去掉今日信息卡**（信息进格子、今天那格显示倒计时、格子可堆多个班次胶囊）、**#5「我的」页导航栏开关与拖拽排序**、**#6 系统日历同步 ＋ 值班自动勿扰**、WebDAV 坚果云 409 兼容、农历可关；上游带来**重复待办的系列编辑器**与**按班次 / 每月多选**。⚠️ **两边迁移段撞在 15 号上**：上游占 15，本分支各段整体顺移一位、`schemaVersion` → **20** —— 按 15 直接升上来会跳过上游那段（丢功能）而 drift 却声明了 `extra_segments`，一读班次即 `no such column: extra_segments`。同轮把「按班次」匹配对上「一天多段班」（`ShiftNameResolver` / `ScheduleChain.shiftNamesOn`）。详见「最近改动」。）
+→ **0.13.0(+181) 正式稳定版**（发布前四收口：**① 自动同步接线** —— `maybeAutoSync` 挂在冷启动闸上，配置齐全才跑、冲突不弹窗、失败静默；**② 导航栏全关死路** —— `setEnabled` 补「至少留一个」下限，否则连「清空重置」都进不去；**③ 帮助文案改口** —— 「换手机」不再写「没有云同步也没有导出」，补「系统日历同步」「导航栏隐藏」两条；**④ 本地导出 / 导入接上入口** —— 原生 `MainActivity` 加 `createBackupFile` / `pickBackupFile` 两个 SAF 方法，「我的 → 数据」加「导出备份 / 导入备份」两行。单测 1186 → **1187**（新增导航下限用例），`flutter analyze` 0 issue。）
 更早见 `git log` 或应用内更新日志。
 
 ## 分支与发布（2026-09-21 用户定，从 0.9.4 起照此办）
@@ -199,7 +200,7 @@ features/widget/            桌面小组件的快照生成与投递（原生侧�
 ## 构建 / 测试 / 发布
 - 本沙箱：每次 pwsh 先 `. C:\...\shiftassistant\tools\build-env.ps1`（设 JAVA_HOME/ANDROID_HOME/PUB_CACHE 等到 `toolchain/`）。注意 `tools/` 与 `toolchain/` 已 gitignore，**不在 GitHub 仓库内**；他人克隆后按 `BUILD.md` 自装 Flutter/JDK/SDK。
 - 改表后：`dart run build_runner build --delete-conflicting-outputs`。
-- 验收标准：`flutter analyze` 0 error / 0 warning（约 4 条 info 提示可容忍）；`flutter test` 全绿（当前 **1186** 条，只增不减 —— v0.8.8 删掉随 `WidgetTier` 一起作废的五档阈值护栏、换上三张固定卡的结构护栏，是等量替换）。视觉工装另算：`flutter test tool/visual/`。
+- 验收标准：`flutter analyze` 0 error / 0 warning（约 4 条 info 提示可容忍）；`flutter test` 全绿（当前 **1187** 条，只增不减 —— v0.8.8 删掉随 `WidgetTier` 一起作废的五档阈值护栏、换上三张固定卡的结构护栏，是等量替换）。视觉工装另算：`flutter test tool/visual/`。
 - 构建：`flutter build apk --release --target-platform android-arm64` → `app/build/app/outputs/flutter-apk/app-release.apk`（**切 arm64 单 ABI**，APK 从 ~60MB 降到 ~21MB；仅 64 位设备）。
 - 分发：复制到 `dist/倒班助手Pro-vX.Y.Z.apk`，用 `aapt2 dump badging` 校验 versionName/versionCode 与包名。
 - 一键发布（GitHub Releases）：`scripts/release.ps1`。

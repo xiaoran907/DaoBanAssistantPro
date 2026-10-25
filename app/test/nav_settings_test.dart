@@ -109,6 +109,27 @@ void main() {
         isTrue);
   });
 
+  test('关掉最后一个 tab 被拒绝（至少留一个，防全关死路）', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(navSettingsProvider.notifier);
+
+    // 先关到只剩「我的」
+    await notifier.setEnabled(NavTabId.calendar, false);
+    await notifier.setEnabled(NavTabId.alarm, false);
+    await notifier.setEnabled(NavTabId.todo, false);
+    await notifier.setEnabled(NavTabId.salary, false);
+    expect(container.read(navSettingsProvider).enabled,
+        {NavTabId.profile});
+
+    // 再关「我的」——必须被拒绝，否则连「清空重置」都进不去
+    await notifier.setEnabled(NavTabId.profile, false);
+    expect(container.read(navSettingsProvider).enabled,
+        {NavTabId.profile}, reason: '最后一个 tab 不该被关掉');
+  });
+
   test('NavSettingsNotifier reorder 后状态正确', () async {
     SharedPreferences.setMockInitialValues({});
 

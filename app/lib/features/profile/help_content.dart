@@ -253,8 +253,24 @@ const List<HelpFaqGroup> helpFaqGroups = [
             question: L10nText('换了手机，怎么把排班搬过去',
                 'I got a new phone — how do I move my schedule over'),
             answer: L10nText(
-              '目前不支持。数据只存在这台手机上，没有云同步也没有导出，换手机要重新排一遍。',
-              'Not supported yet. Everything lives on this phone only — there is no cloud sync and no export — so a new phone means setting it up again.',
+              '「我的 → 数据 → 备份到 WebDAV」先把数据传到网盘；新手机装好 App 后在同一页登录同一账号，点「立即同步」拉下来。不想用网盘的话，也可以「导出备份」成一个文件，传到新手机再「导入备份」。',
+              'Me → Data → the WebDAV backup row: sign in and sync up on the old phone, then sign in with the same account on the new phone and sync down. If you would rather not use a cloud drive, use "Export backup" to save a file, move it to the new phone, and "Import backup" there.',
+            ),
+          ),
+          (
+            question: L10nText('想让班次自动写进系统日历',
+                'I want my shifts written into the system calendar automatically'),
+            answer: L10nText(
+              '「我的 → 系统日历同步」选一个日历，之后每次改排班都会把未来 60 天的班次同步过去；值夜班那几天会自动开勿扰。',
+              'Me → System calendar sync: pick a calendar, and every schedule change writes the next 60 days of shifts into it. Night-duty days switch on Do Not Disturb automatically.',
+            ),
+          ),
+          (
+            question: L10nText('想把底栏不用的页面藏起来',
+                'I want to hide pages I do not use from the bottom bar'),
+            answer: L10nText(
+              '「我的 → 导航栏页面」：关掉哪个，那个页面就从底栏消失（历史数据保留）；也可以拖拽排序。至少会留一个页面，不会全关。',
+              'Me → Navigation bar: switch off a page and it disappears from the bottom bar (its data stays); you can also drag to reorder. At least one page always stays — you cannot turn them all off.',
             ),
           ),
         ],

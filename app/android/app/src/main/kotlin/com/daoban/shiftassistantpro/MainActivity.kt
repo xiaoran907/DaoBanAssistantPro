@@ -82,6 +82,15 @@ class MainActivity : FlutterActivity() {
         /** 自选铃声请求码 —— 与插件占用的请求码区分开。 */
         private const val REQ_PICK_RINGTONE = 40071
 
+        /** 备份导出「选位置」的请求码。 */
+        private const val REQ_CREATE_BACKUP = 40072
+
+        /** 备份导入「选文件」的请求码。 */
+        private const val REQ_PICK_BACKUP = 40073
+
+        /** 导入的备份文件落到的私有子目录（`filesDir/backup/`）。 */
+        private const val BACKUP_DIR = "backup"
+
         /** 自选铃声在私有目录里的子目录名（`filesDir/ringtone/`）。 */
         const val RINGTONE_DIR = "ringtone"
 
@@ -100,6 +109,12 @@ class MainActivity : FlutterActivity() {
 
     /** 等文件选择器回来的那个 Flutter 回调（同一时刻只允许一个）。 */
     private var pendingRingtoneResult: MethodChannel.Result? = null
+
+    /** 等备份文件选择器回来的那个 Flutter 回调（同一时刻只允许一个）。 */
+    private var pendingBackupResult: MethodChannel.Result? = null
+
+    /** 导出时待写的 JSON 内容（选择器回来之前先存着）。 */
+    private var pendingBackupContent: String? = null
 
     override fun onDestroy() {
         // 响铃自停靠这个引用回来撤锁屏标志：Activity 没了就把它清掉，别让它挂着一个
@@ -459,6 +474,55 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         } catch (e: Exception) {
                             result.error("CLEAR_RINGTONE_FAILED", e.message, null)
+                        }
+                    }
+                    "createBackupFile" -> {
+                        // 导出备份：系统「创建文件」选择器挑位置，选完回写 JSON。
+                        // 与铃声同一套模式 —— 选择器是异步的，回调回来前先把
+                        // 待写内容存在字段里；同进程同一时刻只允许一个选择器。
+                        if (pendingBackupResult != null) {
+                            result.error("BACKUP_PICK_IN_PROGRESS", "已有选择器在等待", null)
+                        } else {
+                            pendingBackupResult = result
+                            pendingBackupContent = call.argument<String>("content")
+                            try {
+                                startActivityForResult(
+                                    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                        addCategory(Intent.CATEGORY_OPENABLE)
+                                        type = "application/json"
+                                        putExtra(Intent.EXTRA_TITLE,
+                                            call.argument<String>("name") ?: "daoban-backup.json")
+                                    },
+                                    REQ_CREATE_BACKUP
+                                )
+                            } catch (e: Exception) {
+                                pendingBackupResult = null
+                                pendingBackupContent = null
+                                result.error("CREATE_BACKUP_FAILED", e.message, null)
+                            }
+                        }
+                    }
+                    "pickBackupFile" -> {
+                        // 导入备份：系统「打开文件」选择器挑一个 JSON，选完把内容
+                        // 复制进私有目录再返回文件路径 —— 内容随后由 Dart 侧
+                        // `File(path).readAsString()` 读取（与铃声复制同一条理由：
+                        // 不长期持有 content:// 授权）。
+                        if (pendingBackupResult != null) {
+                            result.error("BACKUP_PICK_IN_PROGRESS", "已有选择器在等待", null)
+                        } else {
+                            pendingBackupResult = result
+                            try {
+                                startActivityForResult(
+                                    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                        addCategory(Intent.CATEGORY_OPENABLE)
+                                        type = "application/json"
+                                    },
+                                    REQ_PICK_BACKUP
+                                )
+                            } catch (e: Exception) {
+                                pendingBackupResult = null
+                                result.error("PICK_BACKUP_FAILED", e.message, null)
+                            }
                         }
                     }
                     "getVolumeLevels" -> {
@@ -864,6 +928,76 @@ class MainActivity : FlutterActivity() {
         }
     } catch (_: Exception) {
         null
+    }
+
+    /** 导出备份的「创建文件」选择器回来了。 */
+    private fun finishCreateBackup(resultCode: Int, data: Intent?) {
+        val result = pendingBackupResult
+        pendingBackupResult = null
+        val content = pendingBackupContent
+        pendingBackupContent = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null || content == null) {
+            // 用户按返回取消了：不是错误，回 false 让界面什么都不做。
+            result?.success(false)
+            return
+        }
+        // 回写是磁盘 I/O（备份 JSON 可能几百 KB），放后台线程，拷完回主线程。
+        Thread {
+            val ok = try {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                } != null
+            } catch (e: Exception) {
+                AlarmLog.error(this, "backup: 导出回写失败 ${e.javaClass.name}: ${e.message}")
+                false
+            }
+            runOnUiThread {
+                if (ok) {
+                    AlarmLog.info(this, "backup: 已导出 ${uri.lastPathSegment}")
+                    result?.success(true)
+                } else {
+                    result?.error("WRITE_BACKUP_FAILED", "写入备份文件失败", null)
+                }
+            }
+        }.start()
+    }
+
+    /** 导入备份的「打开文件」选择器回来了：复制进私有目录再回路径。 */
+    private fun finishPickBackup(resultCode: Int, data: Intent?) {
+        val result = pendingBackupResult
+        pendingBackupResult = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            // 用户按返回取消了：不是错误，回 null 让界面什么都不做。
+            result?.success(null)
+            return
+        }
+        // 复制是磁盘 I/O，放后台线程，拷完回主线程（与铃声同一套）。
+        Thread {
+            val path = try {
+                val dir = File(filesDir, BACKUP_DIR).apply { mkdirs() }
+                val safe = (queryDisplayName(uri) ?: "daoban-backup.json")
+                    .replace(Regex("[^\\p{L}\\p{N}._-]"), "_").take(48)
+                val dest = File(dir, safe)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    if (input == null) return@use
+                    dest.outputStream().use { out -> input.copyTo(out) }
+                }
+                dest.absolutePath
+            } catch (e: Exception) {
+                AlarmLog.error(this, "backup: 导入复制失败 ${e.javaClass.name}: ${e.message}")
+                null
+            }
+            runOnUiThread {
+                if (path == null) {
+                    result?.error("COPY_BACKUP_FAILED", "复制备份文件失败", null)
+                } else {
+                    AlarmLog.info(this, "backup: 已复制导入文件 $path")
+                    result?.success(path)
+                }
+            }
+        }.start()
     }
 
     private fun appendLog(msg: String) = AlarmLog.error(this, msg)
