@@ -170,14 +170,27 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               ),
             ),
             const SizedBox(height: AppTokens.spaceSm),
-            // 快捷按钮：加项 100（用户 2026-10-24 拍板 D2）。
-            GlassActionButton(
-              variant: GlassActionVariant.secondary,
-              onPressed: () {
-                ctrl.text = '100';
-                ctrl.selection = const TextSelection.collapsed(offset: 3);
-              },
-              label: L10n.statsExtraQuick100,
+            // 快捷按钮：加项档位（用户 2026-10-24 拍板 D2，2026-10-25 加 300/200/50）。
+            Wrap(
+              spacing: AppTokens.gapIconText,
+              runSpacing: AppTokens.gapIconText,
+              children: [
+                for (final (label, v) in [
+                  (L10n.statsExtraQuick100, '100'),
+                  (L10n.statsExtraQuick300, '300'),
+                  (L10n.statsExtraQuick200, '200'),
+                  (L10n.statsExtraQuick50, '50'),
+                ])
+                  GlassActionButton(
+                    variant: GlassActionVariant.secondary,
+                    onPressed: () {
+                      ctrl.text = v;
+                      ctrl.selection =
+                          TextSelection.collapsed(offset: v.length);
+                    },
+                    label: label,
+                  ),
+              ],
             ),
             const SizedBox(height: AppTokens.spaceSm),
             Text(L10n.statsDayExtraHint,

@@ -1028,7 +1028,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTokens.rowPrimary),
-              if (timeText.isNotEmpty) ...[
+              // 班次名本身已是时段（值班制模板：班次名就叫「6-8」「22-24」）时，
+              // 再显示一行 timeText 就是肉眼看到的「重复」（用户 2026-10-25 反馈）。
+              // 判断：单段班次 + 名字是「X-Y」且与段的起止小时一致（22-24 的 24
+              // 按 24 小时制折算成 0，与「22-0」同义）。合并成一行。
+              if (timeText.isNotEmpty && !_nameIsOwnTimeText(shift)) ...[
                 const SizedBox(height: AppTokens.gapHair),
                 Text(timeText,
                     maxLines: 1,
@@ -1040,6 +1044,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
         ),
       ],
     );
+  }
+
+  /// 班次名是否就是它自己的时段文本（值班制模板「0-2」「22-24」这类）。
+  /// 单段班次、且名字是「数字-数字」、起止小时与段的钟面一致（end 的 24 按 0 折算）。
+  bool _nameIsOwnTimeText(ShiftClass shift) {
+    final segs = shift.allSegments;
+    if (segs.length != 1) return false;
+    final m = RegExp(r'^(\d+)-(\d+)$').firstMatch(shift.name);
+    if (m == null) return false;
+    final seg = segs.single;
+    final endClock = (seg.endMinute % 1440) ~/ 60;
+    return int.tryParse(m[1]!) == seg.startMinute ~/ 60 &&
+        int.tryParse(m[2]!)! % 24 == endClock;
   }
 
   /// 今天徽章（信息卡日期行旁）。
@@ -2162,20 +2179,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
       );
     }
 
-    // 第 3 行（可多行）：实心时段胶囊。每个班次的每个时段段一个。
+    // 第 3 行（可多行）：实心时段胶囊。每个时段一个，**按开始时间从小到大排**
+    // （用户 2026-10-25 反馈：22-0 不该排在最前）。跨午夜时段按它的
+    // startMinute（22:00=1320）插到正常位置，不特殊处理。
     final nowMinute = now.hour * 60 + now.minute;
+    final coloredSegs = <({ShiftSegment seg, Color color})>[
+      for (final shift in shifts)
+        for (final seg in shift.allSegments) (seg: seg, color: Color(shift.color)),
+    ]..sort((a, b) => a.seg.startMinute.compareTo(b.seg.startMinute));
     final chips = <Widget>[];
-    for (final shift in shifts) {
-      for (final seg in shift.allSegments) {
-        final color = Color(shift.color);
-        // 已结束的时段：降透明度（参考图「灰 = 已过去」），未结束保持实色。
-        final ended = seg.endMinute <= nowMinute;
-        final chipColor =
-            ended ? color.withValues(alpha: 0.35) : color;
-        chips.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 1),
-          child: Container(
-            key: ValueKey('day-chip-${date.day}-${shift.id}'),
+    for (var i = 0; i < coloredSegs.length; i++) {
+      final seg = coloredSegs[i].seg;
+      final color = coloredSegs[i].color;
+      // 已结束的时段：降透明度（参考图「灰 = 已过去」），未结束保持实色。
+      final ended = seg.endMinute <= nowMinute;
+      final chipColor =
+          ended ? color.withValues(alpha: 0.35) : color;
+      chips.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Container(
+          key: ValueKey('day-chip-${date.day}-$i'),
             alignment: Alignment.center,
             width: contentW,
             padding: const EdgeInsets.symmetric(
@@ -2197,13 +2220,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             ),
           ),
         ));
-      }
     }
 
     // 内容那一层：日期 → 标签 → 胶囊列表（居中列）。
     final children = <Widget>[
       dateLine,
-      if (tagLine != null) ...[const SizedBox(height: AppTokens.gapHair), tagLine],
       if (chips.isNotEmpty) ...[const SizedBox(height: AppTokens.gapHair), ...chips],
     ];
     final Widget fittedContent = Column(
@@ -2242,6 +2263,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                 child: _cornerDot(
                     key: ValueKey('day-adjusted-${date.day}'),
                     color: Color(shifts.first.color)),
+              ),
+            // 节假日/调休标签：叠在格子顶部右缘，**不占 Column 高度** ——
+            // 否则有标签的格子胶囊起点比无标签的低，胶囊错位（用户 2026-10-25 反馈）。
+            if (tagLine != null)
+              Positioned(
+                right: 2,
+                top: 2,
+                child: tagLine,
               ),
             Positioned.fill(
               child: warpCenter == null

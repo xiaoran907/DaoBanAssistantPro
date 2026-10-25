@@ -1192,6 +1192,9 @@ class L10n {
   static String get statsDayExtraHint => t(
       '留空 = 这天没有额外加项', 'Leave blank to clear the extra');
   static String get statsExtraQuick100 => t('加项 100', 'Extra 100');
+  static String get statsExtraQuick300 => t('加项 300', 'Extra 300');
+  static String get statsExtraQuick200 => t('加项 200', 'Extra 200');
+  static String get statsExtraQuick50 => t('加项 50', 'Extra 50');
   static String get statsClearExtra => t('清除加项', 'Clear extra');
 
   // 汇总卡。
