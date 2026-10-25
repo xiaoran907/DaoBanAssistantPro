@@ -1011,9 +1011,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               ],
             ),
           // 班次列表：每个班次的每个时段段一行（色点 + 班次名 + 时段）。
+          // 按开始时间从小到大排（与格子胶囊同一规则 —— 22-24 不该排最前）。
           if (shifts.isNotEmpty) ...[
             const SizedBox(height: AppTokens.spaceSm),
-            for (final shift in shifts) ...[
+            for (final shift in [...shifts]..sort(
+                (a, b) => (a.allSegments.isEmpty ? 0 : a.allSegments.first.startMinute)
+                    .compareTo(b.allSegments.isEmpty
+                        ? 0
+                        : b.allSegments.first.startMinute))) ...[
               _shiftRow(context, shift),
               const SizedBox(height: AppTokens.gapHair),
             ],
