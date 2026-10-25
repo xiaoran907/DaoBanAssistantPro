@@ -2143,41 +2143,44 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final primary = Theme.of(context).colorScheme.primary;
     final contentW = cellW - _cellInset * 2;
 
-    // 第 1 行：日期。今天 = 主色加粗（参考图：蓝色加粗）。
+    // 第 1 行：日期 + 节假日/调休小标签（同排）。今天 = 主色加粗（参考图：蓝色加粗）。
+    // 标签跟日期同一行，不占独立行 —— 否则有标签的格子胶囊起点比无标签的低
+    // （上一轮用户反馈对齐），而叠在日期上方又会重叠（这轮反馈）。
     final dateStyle = AppTokens.cellDateSm.copyWith(
       fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
       color: isToday ? primary : Theme.of(context).colorScheme.onSurface,
       height: 1.15,
     );
-    final dateLine = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Text('${date.day}', maxLines: 1, style: dateStyle),
-    );
-
-    // 第 2 行（可选）：节假日 / 调休小标签。只画「值得标出来的」：
-    // 法定节假日红、调休上班橙 —— 普通农历日不在格子里画（它进了信息卡）。
-    Widget? tagLine;
-    if (lunar.isLegalHoliday || lunar.isMakeupWorkday) {
-      final tag = lunar.isLegalHoliday ? L10n.holidayTag : L10n.makeupTag;
-      final tagColor = lunar.isLegalHoliday
-          ? AppTokens.holiday
-          : Colors.orange.shade700;
-      tagLine = FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppTokens.spaceXs, vertical: 1),
-          decoration: BoxDecoration(
-            color: tagColor.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(AppTokens.radiusS),
-          ),
-          child: Text(tag,
+    final Widget? tagChip = lunar.isLegalHoliday || lunar.isMakeupWorkday
+        ? Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.spaceXs, vertical: 1),
+            decoration: BoxDecoration(
+              color: (lunar.isLegalHoliday ? AppTokens.holiday : Colors.orange.shade700)
+                  .withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppTokens.radiusS),
+            ),
+            child: Text(
+              lunar.isLegalHoliday ? L10n.holidayTag : L10n.makeupTag,
               maxLines: 1,
               style: AppTokens.tinyLabel.copyWith(
-                color: tagColor, fontWeight: FontWeight.w700)),
-        ),
-      );
-    }
+                color: lunar.isLegalHoliday
+                    ? AppTokens.holiday
+                    : Colors.orange.shade700,
+                fontWeight: FontWeight.w700),
+            ),
+          )
+        : null;
+    final dateLine = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${date.day}', maxLines: 1, style: dateStyle),
+          if (tagChip != null) ...[const SizedBox(width: AppTokens.gapHair), tagChip],
+        ],
+      ),
+    );
 
     // 第 3 行（可多行）：实心时段胶囊。每个时段一个，**按开始时间从小到大排**
     // （用户 2026-10-25 反馈：22-0 不该排在最前）。跨午夜时段按它的
@@ -2263,14 +2266,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                 child: _cornerDot(
                     key: ValueKey('day-adjusted-${date.day}'),
                     color: Color(shifts.first.color)),
-              ),
-            // 节假日/调休标签：叠在格子顶部右缘，**不占 Column 高度** ——
-            // 否则有标签的格子胶囊起点比无标签的低，胶囊错位（用户 2026-10-25 反馈）。
-            if (tagLine != null)
-              Positioned(
-                right: 2,
-                top: 2,
-                child: tagLine,
               ),
             Positioned.fill(
               child: warpCenter == null
