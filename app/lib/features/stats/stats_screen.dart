@@ -525,7 +525,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   child: _buildYear(
                     context,
                     chain: chain,
-                    config: PayrollConfig(monthlyWage: config.wage),
+                    // 真实逐月月薪（不是把当前月复制全年 —— 那样改某月会整年一样）。
+                    monthlyWages: monthlyWages,
                     dayWages: dayWages,
                     recordFor: recordFor,
                   ),
@@ -739,10 +740,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           maxLines: 1,
           style: AppTokens.rowPrimary,
         ),
-        // 副标题两行封顶、不省略（设计 §6.3）：班次名 + 两笔钱在窄窗下折得下。
+        // 副标题两行封顶、不省略（设计 §6.3）：两笔钱在窄窗下折得下。
+        // 不再带岗次名（用户 2026-10-25：每天卡片下边不要显示岗次）。
         subtitle: Text(
           [
-            pay.shift.name,
             dayPaySubtitleText(pay),
             if (pay.hasExtra) L10n.statsExtraBadge,
           ].join(' · '),
@@ -767,16 +768,13 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   Widget _buildYear(
     BuildContext context, {
     required ScheduleChain? chain,
-    required PayrollConfig config,
+    required Map<(int, int), double> monthlyWages,
     required Map<int, double> dayWages,
     required PayrollRecordRow? Function(int year, int month) recordFor,
   }) {
     final muted = AppTokens.inkMuted(context);
-    // 未设日薪时不白算 12 个月：年度表整个换成一句提示。
-    final monthlyWages = {
-      for (var m = 1; m <= 12; m++) (_year, m): config.monthlyWage,
-    };
-    final months = config.isUnset
+    // 全年都没有逐月月薪才整表换成提示；只要有一个月设过就正常逐月算。
+    final months = monthlyWages.values.every((w) => w == 0)
         ? null
         : computeYearPay(chain, _year, monthlyWages, dayWages);
     return Column(
@@ -821,7 +819,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                       _yearRow(
                         context,
                         label: L10n.monthShort(m),
-                        worked: '${months[m - 1].workedDays}',
+                        // 出勤 = 记过加项的天数（用户 2026-10-25：年度总结的出勤
+                        // 按加项记录算，只有当天记了加项才算出勤）。
+                        worked: '${months[m - 1].extraDays}',
                         payable: moneyText(months[m - 1].total),
                         paid: _paidCellText(recordFor(_year, m)),
                       ),
@@ -830,7 +830,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                       context,
                       label: L10n.statsYearTotal,
                       worked:
-                          '${months.fold<int>(0, (s, m) => s + m.workedDays)}',
+                          '${months.fold<int>(0, (s, m) => s + m.extraDays)}',
                       payable: moneyText(
                           months.fold<double>(0, (s, m) => s + m.total)),
                       paid: moneyText(_yearPaidTotal(_year, recordFor)),
