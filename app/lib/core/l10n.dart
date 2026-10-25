@@ -54,6 +54,7 @@ class L10n {
   static String get navSalary => t('薪资', 'Salary');
 
   static String get navProfile => t('我的', 'Me');
+  static String get navFixedProfile => t('固定', 'Fixed');
 
   // 页面标题
   static String get titleAlarm => t('闹钟', 'Alarm');

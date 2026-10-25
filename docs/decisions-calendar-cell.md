@@ -59,7 +59,14 @@
 - ✅ 格子重写 + 行内等高 + 坐标换算（`calendar_screen.dart` / `range_band.dart` / `calendar_range_band.dart`）
 - ✅ 今日信息卡 `_infoCard`（竖屏底部 / 宽屏右栏）
 - ✅ 版本 0.14.1+182，changelog 中英 prepend，AGENTS 版本史
-- ⏳ 全量测试 + 工装出图 + 提交（进行中）
+- ✅ 全量测试 + 工装出图 + 提交 beta
+
+## 真机反馈（2026-10-25 二次）
+用户装 0.14.1 真机测后提三条 + 附图：
+1. **日期没对齐**：格子内容多/少时日期位置不同 → `_dayCell` 的 Column 改 `mainAxisAlignment: start`（日期贴顶，胶囊往下排）
+2. **信息卡被日历挤出看不到** + 要求**可收起**：加 `_infoCardExpanded`（默认收起成小条「日期 ▾」，点格子某天或点条展开）；展开态 `ConstrainedBox(maxHeight: 45%屏高)` + 卡内滚动，不挤掉网格；收起/展开箭头
+3. **「我的」页导航栏设置：把「我的」的开关移出去**：`_NavTabRow` 里 profile 行不显示 `GlassSwitch`、改显示「固定」文字（关掉它就进不来设置页）；加 l10n `navFixedProfile`
+附：收起态日期行英文窄屏截断 → `Flexible(FittedBox)`
 
 ## 最终格子布局
 

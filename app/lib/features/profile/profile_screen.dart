@@ -1233,36 +1233,43 @@ class _NavTabRow extends ConsumerWidget {
           Icon(def.$2, size: AppTokens.iconMd),
           const SizedBox(width: 12),
           Expanded(child: Text(title, style: AppTokens.labelStrong)),
-          GlassSwitch(
-            value: enabled,
-            onChanged: (v) async {
-              if (!v) {
-                final confirmed = await showGlassDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) => GlassDialog(
-                    title: L10n.navConfirmOffTitle,
-                    content: Text(L10n.navConfirmOffContent(title)),
-                    actions: [
-                      GlassActionButton(
-                        onPressed: () => Navigator.pop(dialogContext, false),
-                        label: L10n.cancel,
-                      ),
-                      const SizedBox(width: 8),
-                      GlassActionButton(
-                        variant: GlassActionVariant.danger,
-                        onPressed: () => Navigator.pop(dialogContext, true),
-                        label: L10n.confirmResetAction,
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-              }
-              ref
-                  .read(navSettingsProvider.notifier)
-                  .setEnabled(id, v);
-            },
-          ),
+          // 「我的」是底栏固定的一项：关掉就进不来这个设置页（连重新打开
+          // 「我的」都做不到，只能重装）。所以它不显示开关，改用固定文字。
+          if (id == NavTabId.profile)
+            Text(L10n.navFixedProfile,
+                style: AppTokens.labelSecondary
+                    .copyWith(color: AppTokens.inkMuted(context)))
+          else
+            GlassSwitch(
+              value: enabled,
+              onChanged: (v) async {
+                if (!v) {
+                  final confirmed = await showGlassDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => GlassDialog(
+                      title: L10n.navConfirmOffTitle,
+                      content: Text(L10n.navConfirmOffContent(title)),
+                      actions: [
+                        GlassActionButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          label: L10n.cancel,
+                        ),
+                        const SizedBox(width: 8),
+                        GlassActionButton(
+                          variant: GlassActionVariant.danger,
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          label: L10n.confirmResetAction,
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
+                ref
+                    .read(navSettingsProvider.notifier)
+                    .setEnabled(id, v);
+              },
+            ),
         ],
       ),
     );

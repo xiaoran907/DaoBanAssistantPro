@@ -135,6 +135,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
 
   late DateTime _month; // 显示月的 1 号
   late DateTime _selected; // 选中的日期（默认今天）
+  /// 底部信息卡是否展开。默认收起成一个小条；点格子某天或点它展开。
+  bool _infoCardExpanded = false;
 
   bool _pressed = false; // 按下膨胀
   bool _dragActive = false; // 拖拽中（跟手，无过渡）
@@ -567,6 +569,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     if (date != null && date != _selected) {
       // 与长按拖选同一口径：**吸附到的格子真的变了**才震。原地按一下不震。
       Haptics.select();
+      // 点某天 -> 信息卡展开显示那天详情（用户 2026-10-25 要求「点开具体日期弹出来」）。
+      _infoCardExpanded = true;
       setState(() => _selected = date);
     }
   }
@@ -870,37 +874,75 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final isAdjusted =
         daySchedule?.dayOverrides.containsKey(dayNumber(_selected)) ?? false;
 
+    // 日期行（收起态也显示这条，作折叠把手）。
+    final dateRow = Row(
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          decoration: BoxDecoration(
+            color: shifts.isNotEmpty ? Color(shifts.first.color) : primary,
+            borderRadius: BorderRadius.circular(AppTokens.radiusS),
+          ),
+        ),
+        const SizedBox(width: AppTokens.gapIconTextLg),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(L10n.monthDay(_selected),
+                maxLines: 1,
+                style: AppTokens.sectionTitle),
+          ),
+        ),
+        if (isToday) ...[const SizedBox(width: AppTokens.spaceSm), _todayBadge(context)],
+        const Spacer(),
+        // 展开/收起箭头。
+        InkWell(
+          onTap: () => setState(() => _infoCardExpanded = !_infoCardExpanded),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              _infoCardExpanded
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_up,
+              size: AppTokens.iconMd,
+              color: muted,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    // 收起态：只显示日期行 + 班次一段（够认出选的是哪天），点日期行也展开。
+    if (!_infoCardExpanded) {
+      return GlassTile(
+        key: const Key('info-card-collapsed'),
+        translucentFill: false,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.spaceLg, vertical: AppTokens.spaceSm),
+        child: InkWell(
+          onTap: () => setState(() => _infoCardExpanded = true),
+          child: dateRow,
+        ),
+      );
+    }
+
     return GlassTile(
+      key: const Key('info-card-expanded'),
       translucentFill: false,
       padding: const EdgeInsets.fromLTRB(
           AppTokens.spaceLg, AppTokens.spaceMd, AppTokens.spaceLg, AppTokens.spaceMd),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 日期行 + 今天徽章。
-          Row(
+      child: ConstrainedBox(
+        // 展开态限高：内容超过屏内剩余时卡内滚动，**不把网格挤出去**
+        // （用户 2026-10-25 反馈「日历把卡片内容挤出去了」）。
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.45),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 4,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: shifts.isNotEmpty ? Color(shifts.first.color) : primary,
-                  borderRadius: BorderRadius.circular(AppTokens.radiusS),
-                ),
-              ),
-              const SizedBox(width: AppTokens.gapIconTextLg),
-              Flexible(
-                child: Text(L10n.monthDay(_selected),
-                    maxLines: 2,
-                    style: AppTokens.sectionTitle),
-              ),
-              if (isToday) ...[
-                const SizedBox(width: AppTokens.spaceSm),
-                _todayBadge(context),
-              ],
-            ],
-          ),
+              dateRow,
           // 班次列表：每个班次的每个时段段一行（色点 + 班次名 + 时段）。
           if (shifts.isNotEmpty) ...[
             const SizedBox(height: AppTokens.spaceSm),
@@ -951,7 +993,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               style: AppTokens.labelSecondary.copyWith(color: muted),
             ),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2164,7 +2208,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     ];
     final Widget fittedContent = Column(
       mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
+      // 日期贴顶（参考图）：日期在格子顶部，胶囊往下排，多余空间留底部。
+      // 否则胶囊多的格子内容变高、日期被推到不同位置（用户 2026-10-25 反馈）。
+      mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: children,
     );

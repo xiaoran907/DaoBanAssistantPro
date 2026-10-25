@@ -3,8 +3,9 @@ status: pending
 task: 日历格子重做（参考图样式）：实心时段胶囊 + 行内等高 + 恢复今日信息卡，v0.14.1+182
 slug: v014-calendar-cell
 started: 2026-10-25T10:45:00Z
-updated: 2026-10-25T14:00:00Z
-next: 提交 beta + main + tag v0.14.1；提交后把 status 改 done
+updated: 2026-10-25T14:05:00Z
+status: done
+next: 无 —— 任务完成。v0.14.1 是测试版（Z≠0），按 AGENTS 规则只留 beta 分支，不合并 main、不打 tag（main 停 0.13.0 状态）。后续发正式版 0.14.0 时再归纳 beta 提交
 ---
 
 # 目标
@@ -26,7 +27,8 @@ next: 提交 beta + main + tag v0.14.1；提交后把 status 改 done
 - [x] **term-34 第二轮全量：1188 通过 / 3 失败**（3 条容器缺字体既有失败）；基线 1187 → **1188**
 - [x] **term-35 工装 1226/18**（18 条全是底栏液态拖一半既有失败）；但发现工装日历「无排班+小窗」溢出 9px（我引入：行高变小→网格矮→空态面板被挤）→ 修 `_buildGrid` 空态面板包 `SingleChildScrollView`，日历工装 52/52 绿
 - [x] **term-38 完整工装（修复后重跑）11 条失败全为底栏液态既有**（与基线 term-37 一致）——确认格子改动没引入新工装失败；term-36 的 236 条是 flaky
-- [ ] **收尾：提交 beta + 同步 main + tag v0.14.1 + 提交存档**
+- [x] **收尾提交完成**：beta HEAD = `f83f457`；v0.14.1 是测试版（Z≠0），按 AGENTS 规则**只留 beta、不合并 main**（main 停 0.13.0 的 9acb26e）；不打 tag
+- [x] 存档 status → done（保留 7 天）
 
 # 关键上下文
 - **文件**：
