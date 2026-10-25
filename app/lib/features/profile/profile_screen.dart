@@ -1438,19 +1438,20 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
   Future<void> _syncNow() async {
     if (!mounted) return;
     // 不弹「选日历」—— 自动创建一个「倒班助手」日历（用户 2026-10-25）。
+    // 创建失败（部分 ROM 不支持）回退到可选日历列表，不让同步卡死。
     final repo = ref.read(appRepositoryProvider);
     final service = CalendarSyncService(repo);
     if (_calendarId == null) {
-      final id = await service.ensureCalendar();
+      var id = await service.ensureCalendar();
       if (id == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(L10n.calendarSyncNoPermission)),
-          );
-        }
-        return;
+        // 建不了专属日历 → 回退到让用户从现有日历里挑一个能写的。
+        await _pickCalendar();
+        if (!mounted) return;
+        id = _calendarId;
+        if (id == null) return;
+      } else if (mounted) {
+        setState(() => _calendarId = id);
       }
-      if (mounted) setState(() => _calendarId = id);
     }
     setState(() => _syncing = true);
     try {

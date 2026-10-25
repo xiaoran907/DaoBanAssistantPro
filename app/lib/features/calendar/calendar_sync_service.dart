@@ -235,12 +235,18 @@ class CalendarSyncService {
     if (existing != null) return existing;
     final permission = await requestPermissions();
     if (!permission) return null;
-    final calendarId = await DeviceCalendar.instance.createCalendar(
-      name: appCalendarName,
-      colorHex: '#1925AC', // 主色
-    );
-    if (calendarId.isNotEmpty) await saveCalendarId(calendarId);
-    return calendarId.isNotEmpty ? calendarId : null;
+    try {
+      final calendarId = await DeviceCalendar.instance.createCalendar(
+        name: appCalendarName,
+        colorHex: '#1925AC', // 主色
+      );
+      if (calendarId.isNotEmpty) await saveCalendarId(calendarId);
+      return calendarId.isNotEmpty ? calendarId : null;
+    } catch (_) {
+      // 创建日历失败（部分 ROM 不支持第三方建日历，如 vivo）：返回 null，
+      // 调用方回退到「可选日历列表」而不是卡死。
+      return null;
+    }
   }
 
   /// 列出可用的日历。
