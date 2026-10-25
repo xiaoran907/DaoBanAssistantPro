@@ -1339,13 +1339,25 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
             Text(L10n.calendarSyncPickCalendarHint,
                 style: AppTokens.rowSecondary),
             const SizedBox(height: 16),
+            // 只读日历（如某些账户日历）写不进去，选它等于白同步 —— 过滤掉。
+            // vivo 上本地日历与账户日历混在一起，用户容易选到只读的那个
+            // 而 createEvent 静默失败、界面还提示「已同步」。
             for (final cal in calendars)
-              GlassPressable(
-                child: ListTile(
-                  leading: const Icon(Icons.calendar_today_outlined),
-                  title: Text(cal.name),
-                  onTap: () => Navigator.pop(dialogContext, cal.id),
+              if (!cal.readOnly)
+                GlassPressable(
+                  child: ListTile(
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: Text(cal.name),
+                    onTap: () => Navigator.pop(dialogContext, cal.id),
+                  ),
                 ),
+            if (calendars.every((c) => c.readOnly))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppTokens.spaceMd),
+                child: Text(L10n.calendarSyncNoWritable,
+                    textAlign: TextAlign.center,
+                    style: AppTokens.rowSecondary
+                        .copyWith(color: AppTokens.inkMuted(context))),
               ),
           ],
         ),
@@ -1379,10 +1391,13 @@ class _CalendarSyncCardState extends ConsumerState<_CalendarSyncCard> {
     final repo = ref.read(appRepositoryProvider);
     final service = CalendarSyncService(repo);
     try {
-      await service.sync();
+      final failed = await service.sync();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(L10n.calendarSyncDone)),
+          SnackBar(
+              content: Text(failed > 0
+                  ? L10n.calendarSyncPartial(failed)
+                  : L10n.calendarSyncDone)),
         );
       }
     } catch (_) {

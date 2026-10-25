@@ -1351,11 +1351,16 @@ class L10n {
       '选择要同步的日历账户', 'Select the calendar account to sync to');
   static String get calendarSyncNoPermission => t(
       '需要日历权限才能同步', 'Calendar permission required to sync');
+  static String get calendarSyncNoWritable => t(
+      '没有可写入的日历（都是只读）', 'No writable calendar found');
   static String get calendarSyncVivoHint => t(
       'vivo 手机：若同步不成功，请到系统设置 → 权限管理 → 日历白名单里允许本应用',
       'vivo: If sync fails, go to Settings → Permissions → Calendar whitelist and allow this app');
   static String get calendarSyncSyncing => t('正在同步...', 'Syncing...');
   static String get calendarSyncDone => t('已同步', 'Synced');
+  static String calendarSyncPartial(int failed) => isEn
+      ? '$failed events failed to write'
+      : '$failed 条事件写入失败，请换一个日历试试';
   static String get calendarSyncFailed => t('同步失败', 'Sync failed');
   static String get calendarSyncNotConfigured => t(
       '请先选择日历', 'Please select a calendar first');

@@ -88,17 +88,21 @@ class CalendarSyncService {
   }
 
   /// 同步到系统日历：创建 / 更新 / 删除事件。
-  Future<void> sync() async {
+  ///
+  /// 返回**写入失败的事件条数**（create/update 各自 try/catch 吞异常，失败
+  /// 只计数不抛出 —— 个别失败不该让整个同步崩掉；但调用方要知道有没有
+  /// 真写进去，否则 vivo 上选到只读日历会「假成功」）。
+  Future<int> sync() async {
     final enabled = await isEnabled();
-    if (!enabled) return;
+    if (!enabled) return 0;
 
     final calendarId = await getCalendarId();
-    if (calendarId == null) return;
+    if (calendarId == null) return 0;
 
     await _migrateLegacyPrefsMap();
 
     final active = await _repo.getActiveSchedules();
-    if (active == null) return;
+    if (active == null) return 0;
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day);
     final events = syncEventsFor(active.chain, from, syncDaysAhead);
@@ -120,6 +124,7 @@ class CalendarSyncService {
     }
 
     // 创建 / 更新：无映射 → createEvent；有映射且指纹变了 → updateEvent。
+    var failed = 0;
     for (final event in events) {
       final existing = byKey[event.key];
       if (existing != null) {
@@ -142,7 +147,9 @@ class CalendarSyncService {
             externalEventId: existing.externalEventId,
             fingerprint: event.fingerprint,
           );
-        } catch (_) {}
+        } catch (_) {
+          failed++;
+        }
         continue;
       }
       final parts = event.key.split(':');
@@ -163,8 +170,11 @@ class CalendarSyncService {
           externalEventId: eventId,
           fingerprint: event.fingerprint,
         );
-      } catch (_) {}
+      } catch (_) {
+        failed++;
+      }
     }
+    return failed;
   }
 
   /// 一次性迁移：旧版把映射存在 prefs 的 JSON（键 `calendarSyncEventMap`）。
