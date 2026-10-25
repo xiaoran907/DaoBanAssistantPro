@@ -354,6 +354,8 @@ class PayrollDayRows extends Table {
 ///
 /// 复合主键 `{year, month, seq}`：`seq` 是同一月内的第几条记录（0 起）。
 /// 编辑某条 = 覆盖该行；删掉某条 = 删该行（不留空位、不重排 seq）。
+///
+/// [day] 是发薪的具体日期（1..31）；老数据（v22 前）没有这一列，读出来是 null。
 class PayrollRecordRows extends Table {
   IntColumn get year => integer()();
   IntColumn get month => integer()();
@@ -365,6 +367,9 @@ class PayrollRecordRows extends Table {
   RealColumn get actual => real().nullable()();
 
   TextColumn get note => text().nullable()();
+
+  /// 发薪的具体日期（1..31）；null = 老数据没标。
+  IntColumn get day => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {year, month, seq};
@@ -435,7 +440,7 @@ class AppDatabase extends _$AppDatabase {
   /// 一位、从 16 起**（16 班次多时段 / 17 薪资表 / 19 逐月薪资 / 20 日历映射）。
   /// 于是装过 v0.12.3（= 15）的库升上来时，15 那段正好跳过（它已经做过 15 的事），
   /// 16 段起才动手 —— 若把 16 段留在 15，那一列会被漏掉（`no such column`）。
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -663,6 +668,11 @@ class AppDatabase extends _$AppDatabase {
           if (from < 21) {
             await customStatement(
                 'ALTER TABLE payroll_day_rows ADD COLUMN note TEXT');
+          }
+          // v0.14：发薪记录标具体日期（用户 2026-10-25）。
+          if (from < 22) {
+            await customStatement(
+                'ALTER TABLE payroll_record_rows ADD COLUMN day INTEGER');
           }
         },
       );

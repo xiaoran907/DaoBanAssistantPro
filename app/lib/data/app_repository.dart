@@ -565,13 +565,14 @@ class AppRepository {
           });
 
   /// 记一个月的实发。[seq] 是同一月内第几条（0 起）；[actual] 可空；不传 [note]
-  /// 等于把备注清掉。
+  /// 等于把备注清掉。[day] 是发薪的具体日期（1..31，可空 = 不标日期）。
   Future<void> savePayrollRecord({
     required int year,
     required int month,
     required int seq,
     double? actual,
     String? note,
+    int? day,
   }) async {
     await db.into(db.payrollRecordRows).insertOnConflictUpdate(
           PayrollRecordRowsCompanion.insert(
@@ -580,6 +581,7 @@ class AppRepository {
             seq: seq,
             actual: Value(actual),
             note: Value(note),
+            day: Value(day),
           ),
         );
   }

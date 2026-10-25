@@ -281,7 +281,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final amountCtrl = TextEditingController(
         text: existing?.actual == null ? '' : _plain(existing!.actual!));
     final noteCtrl = TextEditingController(text: existing?.note ?? '');
-    final result = await showGlassDialog<(String, double?, String)>(
+    var pickedDay = existing?.day;
+    final result = await showGlassDialog<(String, double?, String, int?)>(
       context: context,
       builder: (dialogContext) => GlassDialog(
         title:
@@ -303,6 +304,36 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               ),
             ),
             const SizedBox(height: AppTokens.spaceMd),
+            // 发薪日期（用户 2026-10-25：多条发薪记录可标具体日期）。
+            GlassField(
+              label: L10n.statsActualDate,
+              child: GlassPressable(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    pickedDay == null
+                        ? L10n.statsActualDateHint
+                        : L10n.monthDay(DateTime(year, month, pickedDay!)),
+                    maxLines: 1,
+                    style: AppTokens.rowPrimary,
+                  ),
+                  trailing: const Icon(Icons.calendar_today_outlined,
+                      size: AppTokens.iconSm),
+                  onTap: () async {
+                    final picked = await showGlassDatePicker(
+                      dialogContext,
+                      initialDate: DateTime(
+                          year, month, pickedDay?.clamp(1, 31) ?? 1),
+                    );
+                    if (picked != null && dialogContext.mounted) {
+                      pickedDay = picked.day;
+                      setState(() {});
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: AppTokens.spaceMd),
             GlassField(
               label: L10n.statsActualNote,
               child: TextField(
@@ -317,20 +348,21 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             GlassActionButton(
               variant: GlassActionVariant.danger,
               onPressed: () =>
-                  Navigator.pop(dialogContext, ('clear', null, '')),
+                  Navigator.pop(dialogContext, ('clear', null, '', null)),
               label: L10n.statsClearRecord,
             ),
           const SizedBox(width: 8),
           GlassActionButton(
             onPressed: () =>
-                Navigator.pop(dialogContext, ('cancel', null, '')),
+                Navigator.pop(dialogContext, ('cancel', null, '', null)),
             label: L10n.cancel,
           ),
           const SizedBox(width: 8),
           GlassActionButton(
             onPressed: () {
               final v = _parseAmount(amountCtrl.text);
-              Navigator.pop(dialogContext, ('save', v, noteCtrl.text.trim()));
+              Navigator.pop(
+                  dialogContext, ('save', v, noteCtrl.text.trim(), pickedDay));
             },
             label: L10n.save,
           ),
@@ -339,13 +371,14 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     );
     // 不 dispose（理由见上面 _showWageSettings）。
     if (result == null || !mounted) return;
-    final (action, actual, noteFromDialog) = result;
+    final (action, actual, noteFromDialog, day) = result;
     final note = noteFromDialog.isNotEmpty ? noteFromDialog : null;
     final repo = ref.read(appRepositoryProvider);
     final monthLabel = L10n.yearMonth(DateTime(year, month, 1));
     switch (action) {
       case 'clear':
-        await repo.deletePayrollRecord(year, month, 0);
+        await repo.deletePayrollRecord(
+            year, month, existing?.seq ?? 0);
         if (mounted) {
           showGlassSnack(context, L10n.recordCleared(monthLabel),
               icon: Icons.delete_outline);
@@ -354,15 +387,16 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       case 'save':
         if (actual == null && (note == null || note.isEmpty)) {
           // 两样都空 = 没有可记的东西：当成清除，不留在库里一行空记录。
-          await repo.deletePayrollRecord(year, month, 0);
+          await repo.deletePayrollRecord(
+              year, month, existing?.seq ?? 0);
           if (mounted) {
             showGlassSnack(context, L10n.recordCleared(monthLabel),
                 icon: Icons.delete_outline);
           }
         } else {
           await repo.savePayrollRecord(
-              year: year, month: month, seq: 0,
-              actual: actual, note: note);
+              year: year, month: month, seq: existing?.seq ?? 0,
+              actual: actual, note: note, day: day);
           if (mounted) {
             showGlassSnack(context, L10n.recordSaved(monthLabel),
                 icon: Icons.check_circle_outlined);
@@ -481,6 +515,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       return null;
     }
 
+    List<PayrollRecordRow> recordsFor(int year, int month) =>
+        records.where((r) => r.year == year && r.month == month).toList();
+
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -557,7 +594,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     config: PayrollConfig(monthlyWage: config.wage),
                     dayWages: dayWages,
                     dayNotes: dayNotes,
-                    record: recordFor(_month.year, _month.month),
+                    monthRecords: recordsFor(_month.year, _month.month),
                   ),
                 ),
             ],
@@ -575,7 +612,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     required PayrollConfig config,
     required Map<int, double> dayWages,
     required Map<int, String> dayNotes,
-    required PayrollRecordRow? record,
+    required List<PayrollRecordRow> monthRecords,
   }) {
     final pay = computeMonthPay(
         chain, _month, config.monthlyWage, dayWages, dayNotes: dayNotes);
@@ -608,7 +645,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         const SizedBox(height: AppTokens.spaceMd),
         _summaryCard(context, pay, config),
         const SizedBox(height: AppTokens.spaceMd),
-        _payrollCard(context, record),
+        _payrollCard(context, monthRecords),
         const SizedBox(height: AppTokens.spaceMd),
         SectionHeading(L10n.statsDayListTitle),
         const SizedBox(height: AppTokens.spaceSm),
@@ -681,15 +718,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     );
   }
 
-  Widget _payrollCard(BuildContext context, PayrollRecordRow? record) {
-    final note = record?.note;
-    final subtitle = record == null
+  Widget _payrollCard(BuildContext context, List<PayrollRecordRow> monthRecords) {
+    final subtitle = monthRecords.isEmpty
         ? L10n.statsPayrollEmpty
-        : [
-            if (record.actual != null)
-              '${L10n.statsActualPaid} ${moneyText(record.actual!)}',
-            if (note != null && note.isNotEmpty) note,
-          ].join(' · ');
+        : monthRecords.length == 1
+            ? _recordSubtitle(monthRecords.single)
+            : L10n.statsRecordCount(monthRecords.length);
     return GlassTile(
       translucentFill: false,
       padding: EdgeInsets.zero,
@@ -700,7 +734,77 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           title: Text(L10n.statsPayrollSection),
           subtitle: Text(subtitle, maxLines: 2),
           trailing: const Icon(Icons.chevron_right_outlined),
-          onTap: () => _showRecordDialog(_month.year, _month.month, record),
+          onTap: () => _showRecordListDialog(
+              _month.year, _month.month, monthRecords),
+        ),
+      ),
+    );
+  }
+
+  /// 单条发薪记录的摘要（日期 + 金额 + 备注）。
+  String _recordSubtitle(PayrollRecordRow r) => [
+        if (r.day != null)
+          L10n.monthDay(DateTime(r.year, r.month, r.day!)),
+        if (r.actual != null) moneyText(r.actual!),
+        if (r.note != null && r.note!.isNotEmpty) r.note!,
+      ].join(' · ');
+
+  /// 发薪记录多条列表：列出该月所有记录，可编辑 / 删除 / 添加（用户 2026-10-25）。
+  Future<void> _showRecordListDialog(
+    int year,
+    int month,
+    List<PayrollRecordRow> monthRecords,
+  ) async {
+    await showGlassDialog(
+      context: context,
+      builder: (dialogContext) => GlassDialog(
+        title:
+            '${L10n.statsPayrollSection} · ${L10n.yearMonth(DateTime(year, month, 1))}',
+        actions: [
+          GlassActionButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            label: L10n.close,
+          ),
+        ],
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (monthRecords.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppTokens.spaceMd),
+                child: Text(L10n.statsPayrollEmpty,
+                    style: AppTokens.rowSecondary
+                        .copyWith(color: AppTokens.inkMuted(context))),
+              )
+            else
+              for (final r in monthRecords)
+                GlassPressable(
+                  child: ListTile(
+                    key: Key('stats-record-${r.seq}'),
+                    leading: const Icon(Icons.payments_outlined,
+                        size: AppTokens.iconSm),
+                    title: Text(_recordSubtitle(r),
+                        maxLines: 2,
+                        style: AppTokens.rowPrimary),
+                    trailing: const Icon(Icons.edit_outlined,
+                        size: AppTokens.iconSm),
+                    onTap: () async {
+                      Navigator.pop(dialogContext);
+                      await _showRecordDialog(year, month, r);
+                    },
+                  ),
+                ),
+            const SizedBox(height: AppTokens.spaceSm),
+            GlassActionButton(
+              variant: GlassActionVariant.secondary,
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                await _showRecordDialog(year, month, null);
+              },
+              label: L10n.statsAddRecord,
+            ),
+          ],
         ),
       ),
     );

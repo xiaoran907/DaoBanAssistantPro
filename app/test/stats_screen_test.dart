@@ -132,7 +132,10 @@ void main() {
   testWidgets('发薪记录：记一笔实发，行上立刻显示；清除后回「未记」', (tester) async {
     await pumpScreen(tester);
 
+    // 点「发薪记录」→ 多条列表 → 「添加一条」→ 编辑弹窗。
     await tester.tap(find.byKey(const Key('stats-payroll-row')));
+    await settle(tester);
+    await tester.tap(find.text(L10n.statsAddRecord));
     await settle(tester);
     // 弹层两个框：实发金额在前、备注在后（GlassField 标签同理，按序取）。
     await tester.enterText(find.byType(TextField).at(0), '4830');
@@ -148,8 +151,10 @@ void main() {
     expect(records.single.actual, 4830);
     expect(records.single.note, '银行转账');
 
-    // 再点开，走「清除记录」。
+    // 再点开列表 → 点那条记录 → 走「清除记录」。
     await tester.tap(find.byKey(const Key('stats-payroll-row')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('stats-record-0')));
     await settle(tester);
     await tester.tap(find.text(L10n.statsClearRecord));
     await settle(tester);

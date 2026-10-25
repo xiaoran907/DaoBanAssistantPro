@@ -1237,6 +1237,12 @@ class L10n {
   static String get statsPayrollSection => t('发薪记录', 'Payroll record');
   static String get statsActualAmount => t('实发金额', 'Actual paid');
   static String get statsActualNote => t('备注', 'Note');
+  static String get statsActualDate => t('发薪日期', 'Pay date');
+  static String get statsActualDateHint => t('选择日期', 'Pick a date');
+  static String get statsAddRecord => t('添加一条', 'Add one');
+  static String statsRecordCount(int n) => isEn
+      ? '$n records'
+      : '$n 条记录';
   static String get statsClearRecord => t('清除记录', 'Clear record');
   static String get statsActualPaid => t('实发', 'Actual paid');
   static String get statsPayrollEmpty => t('还没记实发', 'No actual paid recorded yet');
