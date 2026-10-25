@@ -143,6 +143,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   /// 今日天气（信息卡显示）。null = 没拉到（定位拒绝 / 网络失败 / 未开始）。
   WeatherInfo? _weather;
   DateTime? _weatherFetchedAt; // 天气缓存时间戳（30 分钟内不重复拉）
+  /// 天气拉取失败标记：true = 试过但失败（定位拿不到/网络）。信息卡据此显示提示。
+  bool _weatherFailed = false;
 
   bool _pressed = false; // 按下膨胀
   bool _dragActive = false; // 拖拽中（跟手，无过渡）
@@ -355,32 +357,44 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     _loadWeather();
   }
 
-  /// 拉今日天气（定位 → Open-Meteo）。30 分钟内已拉过就不再拉；
-  /// 失败静默（天气是锦上添花，不阻塞日历）。
+  /// 拉今日天气（定位 → Open-Meteo）。30 分钟内已拉过就不再拉。
+  /// 定位拿不到坐标或网络失败时置 [_weatherFailed]，信息卡显示「天气暂不可用」
+  /// 而不是空白（用户 2026-10-25 反馈：天气没出来看不出原因）。
   Future<void> _loadWeather() async {
-    final last = _weatherFetchedAt;
-    if (last != null &&
-        DateTime.now().difference(last).inMinutes < 30) {
+    if (_weather != null ||
+        (_weatherFetchedAt != null &&
+            DateTime.now().difference(_weatherFetchedAt!).inMinutes < 30)) {
       return;
     }
-    final permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      final asked = await Geolocator.requestPermission();
-      if (asked == LocationPermission.denied) return;
-    }
-    if (permission == LocationPermission.deniedForever) return;
     try {
+      // 没权限就请求；拒绝/限制则标记失败返回。vivo 可能返回 `restricted`，
+      // 不能只认 `denied`。
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() => _weatherFailed = true);
+        return;
+      }
+      // 定位加了超时：vivo 上 getCurrentPosition 偶尔不返回，不能一直等。
       final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
+              locationSettings: const LocationSettings(
+                  accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 10)))
+          .timeout(const Duration(seconds: 12));
       final w = await WeatherService.fetchWeather(
           pos.latitude, pos.longitude);
       if (!mounted) return;
       setState(() {
         _weather = w;
         _weatherFetchedAt = DateTime.now();
+        _weatherFailed = w == null;
       });
     } catch (_) {
-      // 定位失败 / 网络失败：不显示天气即可。
+      if (!mounted) return;
+      setState(() => _weatherFailed = true);
     }
   }
 
@@ -993,7 +1007,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             children: [
               dateRow,
           // 今日天气：图标 + 温度 + 现象（用户 2026-10-25 要求）。
-          // 没拉到（定位拒绝 / 无网）就不显示，不占位。
           if (_weather != null) ...[const SizedBox(height: AppTokens.spaceSm)],
           if (_weather != null)
             Row(
@@ -1009,6 +1022,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   style: AppTokens.rowSecondary,
                 ),
               ],
+            ),
+          // 天气拉取失败：显示提示 + 点击重试（否则用户只看到没有天气，不明原因）。
+          if (_weatherFailed) ...[const SizedBox(height: AppTokens.spaceSm)],
+          if (_weatherFailed)
+            InkWell(
+              onTap: () {
+                setState(() => _weatherFailed = false);
+                _loadWeather();
+              },
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_off_outlined, size: AppTokens.iconMd, color: muted),
+                  const SizedBox(width: AppTokens.gapIconText),
+                  Flexible(
+                    child: Text(L10n.weatherUnavailable,
+                        maxLines: 1,
+                        style: AppTokens.rowSecondary.copyWith(color: muted)),
+                  ),
+                ],
+              ),
             ),
           // 班次列表：每个班次的每个时段段一行（色点 + 班次名 + 时段）。
           // 按开始时间从小到大排（与格子胶囊同一规则 —— 22-24 不该排最前）。
