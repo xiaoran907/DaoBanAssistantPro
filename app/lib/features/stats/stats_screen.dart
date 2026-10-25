@@ -144,8 +144,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   /// 弹层的三种去向：保存（value 可为 null = 清除加项）/ 清除自定义 / 取消。
   Future<void> _showDayWageDialog(DayPay pay) async {
     final ctrl = TextEditingController(text: _plain(pay.extra));
+    final noteCtrl = TextEditingController(text: pay.note ?? '');
     final hasCustom = pay.hasExtra;
-    final result = await showGlassDialog<(String, double?)>(
+    final result = await showGlassDialog<(String, double?, String?)>(
       context: context,
       builder: (dialogContext) => GlassDialog(
         title: L10n.dayExtraDialogTitle(pay.date),
@@ -176,9 +177,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               runSpacing: AppTokens.gapIconText,
               children: [
                 for (final (label, v) in [
-                  (L10n.statsExtraQuick100, '100'),
                   (L10n.statsExtraQuick300, '300'),
                   (L10n.statsExtraQuick200, '200'),
+                  (L10n.statsExtraQuick100, '100'),
                   (L10n.statsExtraQuick50, '50'),
                 ])
                   GlassActionButton(
@@ -192,6 +193,16 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   ),
               ],
             ),
+            // 备注栏（用户 2026-10-25：加项可备注信息）。
+            const SizedBox(height: AppTokens.spaceMd),
+            GlassField(
+              label: L10n.statsDayExtraNote,
+              child: TextField(
+                controller: noteCtrl,
+                maxLines: 2,
+                decoration: glassInputDecoration(context),
+              ),
+            ),
             const SizedBox(height: AppTokens.spaceSm),
             Text(L10n.statsDayExtraHint,
                 style: AppTokens.microText
@@ -203,19 +214,22 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           if (hasCustom)
             GlassActionButton(
               variant: GlassActionVariant.danger,
-              onPressed: () => Navigator.pop(dialogContext, ('clear', null)),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, ('clear', null, null)),
               label: L10n.statsClearExtra,
             ),
           const SizedBox(width: 8),
           GlassActionButton(
-            onPressed: () => Navigator.pop(dialogContext, ('cancel', null)),
+            onPressed: () =>
+                Navigator.pop(dialogContext, ('cancel', null, null)),
             label: L10n.cancel,
           ),
           const SizedBox(width: 8),
           GlassActionButton(
             onPressed: () {
               final v = _parseAmount(ctrl.text);
-              Navigator.pop(dialogContext, ('save', v));
+              Navigator.pop(
+                  dialogContext, ('save', v, noteCtrl.text.trim()));
             },
             label: L10n.save,
           ),
@@ -225,7 +239,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final text = ctrl.text;
     // 不 dispose（理由见上面 _showWageSettings）。
     if (result == null || !mounted) return;
-    final (action, value) = result;
+    final (action, value, note) = result;
     final repo = ref.read(appRepositoryProvider);
     switch (action) {
       case 'clear':
@@ -244,7 +258,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 icon: Icons.restart_alt_outlined);
           }
         } else if (value != null) {
-          await repo.setPayrollDayWage(pay.date, value);
+          await repo.setPayrollDayWage(pay.date, value, note: note);
           if (mounted) {
             showGlassSnack(context, L10n.extraSet,
                 icon: Icons.check_circle_outlined);
@@ -455,6 +469,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     );
     final dayWages =
         ref.watch(payrollDayWagesProvider).valueOrNull ?? const <int, double>{};
+    final dayNotes =
+        ref.watch(payrollDayNotesProvider).valueOrNull ?? const <int, String>{};
     final records = ref.watch(payrollRecordsProvider).valueOrNull ??
         const <PayrollRecordRow>[];
 
@@ -528,6 +544,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     // 真实逐月月薪（不是把当前月复制全年 —— 那样改某月会整年一样）。
                     monthlyWages: monthlyWages,
                     dayWages: dayWages,
+                    dayNotes: dayNotes,
                     recordFor: recordFor,
                   ),
                 )
@@ -539,6 +556,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     chain: chain,
                     config: PayrollConfig(monthlyWage: config.wage),
                     dayWages: dayWages,
+                    dayNotes: dayNotes,
                     record: recordFor(_month.year, _month.month),
                   ),
                 ),
@@ -556,9 +574,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     required ScheduleChain? chain,
     required PayrollConfig config,
     required Map<int, double> dayWages,
+    required Map<int, String> dayNotes,
     required PayrollRecordRow? record,
   }) {
-    final pay = computeMonthPay(chain, _month, config.monthlyWage, dayWages);
+    final pay = computeMonthPay(
+        chain, _month, config.monthlyWage, dayWages, dayNotes: dayNotes);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -628,7 +648,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   children: [
                     Expanded(
                         child: _statCell(
-                            context, L10n.workedDaysCount(pay.workedDays))),
+                            context, L10n.workedDaysCount(pay.extraDays))),
                     Expanded(
                         child: _statCell(context, L10n.statsExtraTotal,
                             moneyText(pay.extraTotal))),
@@ -637,20 +657,6 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                             moneyText(pay.monthlyWage))),
                   ],
                 ),
-                if (pay.shiftCounts.isNotEmpty) ...[
-                  const SizedBox(height: AppTokens.spaceMd),
-                  const Divider(height: 1),
-                  const SizedBox(height: AppTokens.spaceSm),
-                  Text(
-                    [
-                      L10n.statsByShift,
-                      for (final e in pay.shiftCounts.entries)
-                        '${e.key}${e.value}',
-                    ].join(' · '),
-                    key: const Key('stats-by-shift'),
-                    style: AppTokens.microText.copyWith(color: muted),
-                  ),
-                ],
               ],
             ),
     );
@@ -741,12 +747,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           style: AppTokens.rowPrimary,
         ),
         // 副标题两行封顶、不省略（设计 §6.3）：两笔钱在窄窗下折得下。
-        // 不再带岗次名（用户 2026-10-25：每天卡片下边不要显示岗次）。
+        // 不再带岗次名，也不再重复「加项」徽章（subtitle 已是「加项 ¥X」）。
         subtitle: Text(
-          [
-            dayPaySubtitleText(pay),
-            if (pay.hasExtra) L10n.statsExtraBadge,
-          ].join(' · '),
+          dayPaySubtitleText(pay),
           maxLines: 2,
           style: AppTokens.rowSecondary.copyWith(color: muted),
         ),
@@ -770,13 +773,15 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     required ScheduleChain? chain,
     required Map<(int, int), double> monthlyWages,
     required Map<int, double> dayWages,
+    required Map<int, String> dayNotes,
     required PayrollRecordRow? Function(int year, int month) recordFor,
   }) {
     final muted = AppTokens.inkMuted(context);
     // 全年都没有逐月月薪才整表换成提示；只要有一个月设过就正常逐月算。
     final months = monthlyWages.values.every((w) => w == 0)
         ? null
-        : computeYearPay(chain, _year, monthlyWages, dayWages);
+        : computeYearPay(
+            chain, _year, monthlyWages, dayWages, dayNotes: dayNotes);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

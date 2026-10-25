@@ -341,6 +341,8 @@ class PayrollMonthlyRows extends Table {
 class PayrollDayRows extends Table {
   IntColumn get day => integer()();
   RealColumn get wage => real()();
+  // 加项备注（用户 2026-10-25：按日出勤加项可备注）。
+  TextColumn get note => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {day};
@@ -433,7 +435,7 @@ class AppDatabase extends _$AppDatabase {
   /// 一位、从 16 起**（16 班次多时段 / 17 薪资表 / 19 逐月薪资 / 20 日历映射）。
   /// 于是装过 v0.12.3（= 15）的库升上来时，15 那段正好跳过（它已经做过 15 的事），
   /// 16 段起才动手 —— 若把 16 段留在 15，那一列会被漏掉（`no such column`）。
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -656,6 +658,11 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(shiftClassRows);
             await m.createTable(shiftCycleRows);
             await _migrateRowsToTwoTier();
+          }
+          // v0.14：按日出勤加项加备注列（用户 2026-10-25）。
+          if (from < 21) {
+            await customStatement(
+                'ALTER TABLE payroll_day_rows ADD COLUMN note TEXT');
           }
         },
       );

@@ -83,7 +83,6 @@ void main() {
     // 金额卡上那行就是现算的总额（同一口径的 moneyText）。
     // 包月制下 total == monthlyWage（无加项），大数字与月薪列显示同值，所以 findsWidgets。
     expect(find.text(moneyText(month.total)), findsWidgets);
-    expect(find.byKey(const Key('stats-by-shift')), findsOneWidget);
     await disposeScreen(tester);
   });
 

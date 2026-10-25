@@ -516,11 +516,13 @@ class AppRepository {
   /// 列名不改以免牵动读写两侧与全部测试。
   ///
   /// [day] 按 [dateOnly] 口径归一天：传带时分的日期也落到同一天。
-  Future<void> setPayrollDayWage(DateTime day, double wage) async {
+  /// [note] 是加项备注（用户 2026-10-25：按日出勤可备注信息）。
+  Future<void> setPayrollDayWage(DateTime day, double wage, {String? note}) async {
     await db.into(db.payrollDayRows).insertOnConflictUpdate(
           PayrollDayRowsCompanion.insert(
             day: Value(dayNumber(dateOnly(day))),
             wage: wage,
+            note: Value(note),
           ),
         );
   }
@@ -538,11 +540,29 @@ class AppRepository {
     return {for (final r in rows) r.day: r.wage};
   }
 
+  /// 全部单日加项备注：`dayNumber → 备注`（统计页编辑加项时回填备注）。
+  Future<Map<int, String>> listPayrollDayNotes() async {
+    final rows = await db.select(db.payrollDayRows).get();
+    return {
+      for (final r in rows)
+        if (r.note != null && r.note!.isNotEmpty) r.day: r.note!,
+    };
+  }
+
   /// [listPayrollDayWages] 的流版本（统计页改了某一天的加项后要立刻重算）。
   Stream<Map<int, double>> watchPayrollDayWages() => db
       .select(db.payrollDayRows)
       .watch()
       .map((rows) => {for (final r in rows) r.day: r.wage});
+
+  /// 单日加项备注流（编辑加项后可立刻回填）。
+  Stream<Map<int, String>> watchPayrollDayNotes() => db
+      .select(db.payrollDayRows)
+      .watch()
+      .map((rows) => {
+            for (final r in rows)
+              if (r.note != null && r.note!.isNotEmpty) r.day: r.note!,
+          });
 
   /// 记一个月的实发。[seq] 是同一月内第几条（0 起）；[actual] 可空；不传 [note]
   /// 等于把备注清掉。
@@ -1703,6 +1723,10 @@ final payrollConfigProvider = Provider<PayrollConfig>((ref) {
 
 final payrollDayWagesProvider = StreamProvider<Map<int, double>>(
     (ref) => ref.watch(appRepositoryProvider).watchPayrollDayWages());
+
+/// 单日加项备注（`dayNumber → 备注`），供统计页编辑加项时回填。
+final payrollDayNotesProvider = StreamProvider<Map<int, String>>(
+    (ref) => ref.watch(appRepositoryProvider).watchPayrollDayNotes());
 
 final payrollRecordsProvider = StreamProvider<List<PayrollRecordRow>>(
     (ref) => ref.watch(appRepositoryProvider).watchPayrollRecords());

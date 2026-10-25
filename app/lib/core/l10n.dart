@@ -1204,6 +1204,7 @@ class L10n {
       t('${monthDay(d)} 加项', '${monthDay(d)} extra');
   static String get statsDayExtraField =>
       t('当天加项', "That day's extra");
+  static String get statsDayExtraNote => t('备注', 'Note');
   static String get statsDayExtraHint => t(
       '留空 = 这天没有额外加项', 'Leave blank to clear the extra');
   static String get statsExtraQuick100 => t('100', '100');
@@ -1218,9 +1219,6 @@ class L10n {
   /// 包月制下的加项合计（v0.12.3）。
   static String get statsExtraTotal => t('加班加项合计', 'Extra total');
 
-  /// 单日行上的「加项」标记。
-  static String get statsExtraBadge => t('加项', 'Extra');
-  static String get statsByShift => t('按班次', 'By shift');
   static String get statsMonthEmpty => t('本月没有出勤', 'No attendance this month');
   static String workedDaysCount(int n) =>
       t('出勤 $n 天', '$n working days');

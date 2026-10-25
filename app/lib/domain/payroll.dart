@@ -72,6 +72,7 @@ class DayPay {
     required this.shift,
     required this.extra,
     required this.hasExtra,
+    this.note,
   });
 
   /// 纯日期（UTC，`dateOnly` 口径）。
@@ -85,6 +86,9 @@ class DayPay {
 
   /// 这天有没有设过加项（列表行据此标注，不然用户看不出这笔和别的不一样）。
   final bool hasExtra;
+
+  /// 加项备注（用户 2026-10-25：按日出勤可备注信息）。可空。
+  final String? note;
 }
 
 /// 一个月的薪资账。
@@ -127,8 +131,9 @@ class MonthPay {
 DayPay? payForDay(
   ScheduleChain? chain,
   DateTime day,
-  Map<int, double> dayExtras,
-) {
+  Map<int, double> dayExtras, {
+  Map<int, String> dayNotes = const {},
+}) {
   final shifts = chain?.shiftOn(day) ?? const [];
   ShiftClass? workShift;
   for (final shift in shifts) {
@@ -144,6 +149,7 @@ DayPay? payForDay(
     shift: workShift,
     extra: extraValue ?? 0,
     hasExtra: extraValue != null,
+    note: dayNotes[dayNumber(day)],
   );
 }
 
@@ -154,14 +160,15 @@ MonthPay computeMonthPay(
   ScheduleChain? chain,
   DateTime month,
   double monthlyWage,
-  Map<int, double> dayExtras,
-) {
+  Map<int, double> dayExtras, {
+  Map<int, String> dayNotes = const {},
+}) {
   final days = DateTime(month.year, month.month + 1, 0).day;
   final pays = <DayPay>[];
   final counts = <String, int>{};
   for (var d = 1; d <= days; d++) {
     final date = DateTime(month.year, month.month, d);
-    final pay = payForDay(chain, date, dayExtras);
+    final pay = payForDay(chain, date, dayExtras, dayNotes: dayNotes);
     if (pay == null) continue;
     pays.add(pay);
     counts.update(pay.shift.shortLabel, (n) => n + 1, ifAbsent: () => 1);
@@ -182,11 +189,13 @@ List<MonthPay> computeYearPay(
   ScheduleChain? chain,
   int year,
   Map<(int, int), double> monthlyWages,
-  Map<int, double> dayExtras,
-) => [
+  Map<int, double> dayExtras, {
+  Map<int, String> dayNotes = const {},
+}) => [
       for (var m = 1; m <= 12; m++)
         computeMonthPay(
-            chain, DateTime(year, m, 1), monthlyWages[(year, m)] ?? 0, dayExtras),
+            chain, DateTime(year, m, 1), monthlyWages[(year, m)] ?? 0,
+            dayExtras, dayNotes: dayNotes),
     ];
 
 /// 金额：两位小数 + 千分位。`¥` 符号由界面层拼（这里只管数）。
