@@ -3,17 +3,18 @@ status: in_progress
 task: v0.13 收尾：#6 系统日历同步完善 + 值班自动勿扰 + 129 条测试红修复 + 0.13.0+180 发布
 slug: v013-six-features
 started: 2026-10-24T10:00:00Z
-updated: 2026-10-25T00:30:00Z
-next: 远端动作在容器里做不了（无外网 / 无 pwsh+gh / 无 key.properties）→ 用户在自己的 Windows 机上执行命令清单（push beta → push main → push tag → release.ps1 -SkipConfirm → curl 核对 main 上的 latest.json）
+updated: 2026-10-25T10:20:00Z
+next: 发布前四收口已完成（提交 2704a41，beta）+ main 已并入（a03edf5）+ tag 已重指 → 等签名材料（`app/android/key.properties` + `release.jks` + `~/.aicode/github-token` chmod 600）→ 容器内 `flutter build apk --release` + `apksigner verify` 比对证书 → 手写 API 建 Release（v0.13.0）→ 传 APK → 改 main `latest.json`（stable=0.13.0）并推送 → 核对 raw（可能需用户代跑）。同一 APK 给用户真机验「v0.12.3 库升到 0.13.0」。
 ---
 
-## 发布状态（2026-10-25，本地已就绪，未推）
-- 分支：beta（HEAD = 9359253 + 一条存档 chore）；main = **a7cd679**（`--no-ff` 合并 beta，latest.json 冲突取 main 侧，两侧只差 updatedAt）；**tag `v0.13.0` 已打在该合并提交上（本地，未 push）**；`git diff --stat beta main` 仅 latest.json 一行差异
-- 旧 tag 是轻量 tag（`v0.12.1` 直接指 beta 提交），所以 v0.13.0 也照轻量打；现存 tag 最新为 v0.13.0 > v0.12.1（v0.12.2/0.12.3/0.12.4 从未打过 tag）
-- 容器做不了的部分：`pwsh`/`gh` 缺失（release.ps1 跑不了）、`app/android/key.properties` 缺失（出不了正式签名 APK）、**容器无外网**（github.com DNS 能解、TCP 超时，`git ls-remote` 30s 超时）
-- 命令清单（用户在 Windows 仓库里跑）：`git push origin beta` → `git checkout main && git push origin main` → `git push origin v0.13.0` → `scripts/release.ps1 -SkipConfirm` → `curl -s https://raw.githubusercontent.com/.../main/latest.json` 核对 stable=0.13.0
+## 发布状态（2026-10-25 第三轮：四收口已并入，本地就绪，未推）
+- **发布前四收口已完成**：① 自动同步接线（`maybeAutoSync` 挂冷启动闸）② 导航栏至少留一页（`setEnabled` 补下限）③ 帮助文案改口 + 补两条 ④ 本地导出/导入接入口（`MainActivity` 两个 SAF 方法 + 「我的 → 数据」两行）。提交 `2704a41`（beta），main 并入 `a03edf5`，tag `v0.13.0` 重指 a03edf5，两侧 diff 为空。
+- **验证**：`flutter analyze` **0 issue**；全量 `flutter test` **1187 通过 / 3 失败**（3 条容器缺字体既有失败，非回归）；`flutter test tool/visual/` **11 条失败是既有**（`295d55a` nav #5 把 `glass-nav-bar` key 改成带后缀，工装没同步，非本轮引入）。
+- **版本**：`0.13.0+180` → **`0.13.0+181`**（`pubspec.yaml`）；`app_info.dart` 仍 `0.13.0`。
+- 分支与 refs：beta = **2704a41**；main = **a03edf5**；**tag `v0.13.0`（轻量）= a03edf5**（本地，未 push）；`git diff --stat beta main` 为空。
+- 容器**能**发布：`github.com` / `api.github.com` / `uploads.github.com` / `codeload` / `objects` 全通、`git ls-remote` rc=0；**只有 `raw.githubusercontent.com` 被 reset**。缺的只是 `pwsh`/`gh`（release.ps1 跑不了 → 改手写 API 调用）、签名材料、PAT。
 - ⚠️ **用户拍板（2026-10-25）**：#1「切换页面卡顿」与 D39（桌面小组件月历卡消费快照 v3 的 shifts）**都不进 v0.13.0**，留到 0.13.1
-- ⚠️ 插队任务「日历格子可读性」原定 0.12.5+180，而本流已发 0.13.0 —— **动手前必须与用户重定版本号与发布顺序**（大概率 0.13.1+181）
+- ⚠️ 插队任务「日历格子可读性」原定 0.12.5+180，而本流是 0.13.0 —— **动手前必须与用户重定版本号与发布顺序**（大概率 0.13.1+181）
 
 ## 进度（2026-10-25，本会话）
 - ✅ 全量测试 `/tmp/test-full4.log`：**1147 通过 / 3 失败**（上一轮基线 test-full3.log 1145/5）；剩 3 条即容器缺字体的预存失败（label_value_row「编辑器的字段标签与值 · 320dp 特大 · en」、list_subtitle_fit「待办副标题折两行，不省略」en+zh），**不是回归，勿为它改判据**
