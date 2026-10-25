@@ -910,6 +910,18 @@ class L10n {
 
   /// 今天格倒计时：距下一段岗次开始还有多少小时（≥ 1h 时用这一档）。
   static String countdownH(int h) => isEn ? 'in ${h}h' : '距 ${h}h';
+
+  /// 信息卡班次行右侧：下一条联动闹钟还有多久响铃。
+  static String ringIn(int minutes) =>
+      isEn ? 'ring in ${_hms(minutes)}' : '还剩 ${_hms(minutes)} 响铃';
+
+  static String _hms(int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (h == 0) return '${m}min';
+    if (m == 0) return '${h}h';
+    return '${h}h${m}m';
+  }
   static String get savedAndRescheduled => t('已保存并重排闹钟', 'Saved & alarms rescheduled');
   static String switchedTo(String name) => isEn ? 'Switched to $name' : '已切换到 $name';
   static List<String> get weekdays => isEn

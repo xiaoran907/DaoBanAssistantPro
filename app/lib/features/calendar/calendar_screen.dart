@@ -834,9 +834,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               // 那个理由跟着消失 —— 网格任何时候都画（D36 的处方，先落这一半）。
               grid,
               // v0.14 恢复：选中那天的详情卡（信息从格子移来这里）。
+              // 底部留出悬浮导航胶囊的高度 —— 否则收起的小条正好在屏幕底、
+              // 被导航胶囊盖住（用户 2026-10-25 反馈）。
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    AppTokens.spaceLg, AppTokens.spaceSm, AppTokens.spaceLg, AppTokens.spaceMd),
+                padding: EdgeInsets.fromLTRB(AppTokens.spaceLg, AppTokens.spaceSm,
+                    AppTokens.spaceLg, kNavCapsuleInset),
                 child: _infoCard(context, chain),
               ),
             ],
@@ -865,6 +867,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
 
   /// 选中那天的详情卡（竖屏底部 / 宽屏右栏）。
   Widget _infoCard(BuildContext context, ScheduleChain? chain) {
+    final showLunarDay = ref.watch(
+        appSettingsProvider.select((s) => s.showLunarDay)); // 农历开关
     final lunar = lunarOf(_selected);
     final shifts = chain?.shiftOn(_selected) ?? const [];
     final isToday = isSameDay(_selected, dateOnly(DateTime.now()));
@@ -951,26 +955,28 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
               const SizedBox(height: AppTokens.gapHair),
             ],
           ],
-          // 农历（含节假日标记）。
-          const SizedBox(height: AppTokens.spaceXs),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              lunar.isLegalHoliday
-                  ? '${lunar.shortLabel} · 法定节假日'
-                  : lunar.isMakeupWorkday
-                      ? '${lunar.shortLabel} · 调休上班'
-                      : lunar.shortLabel,
-              maxLines: 1,
-              style: AppTokens.rowSecondary.copyWith(
-                color: lunar.isLegalHoliday
-                    ? AppTokens.holiday
+          // 农历（含节假日名；跟随「我的 → 显示农历」开关）。
+          if (showLunarDay) ...[
+            const SizedBox(height: AppTokens.spaceXs),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                lunar.isLegalHoliday && lunar.holidayName.isNotEmpty
+                    ? '${lunar.shortLabel} · ${lunar.holidayName}'
                     : lunar.isMakeupWorkday
-                        ? Colors.orange.shade700
-                        : muted,
+                        ? '${lunar.shortLabel} · 调休上班'
+                        : lunar.shortLabel,
+                maxLines: 1,
+                style: AppTokens.rowSecondary.copyWith(
+                  color: lunar.isLegalHoliday
+                      ? AppTokens.holiday
+                      : lunar.isMakeupWorkday
+                          ? Colors.orange.shade700
+                          : muted,
+                ),
               ),
             ),
-          ),
+          ],
           // 今天：倒计时。
           if (isToday) ...[
             const SizedBox(height: AppTokens.gapHair),
@@ -1001,11 +1007,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   }
 
   /// 班次一行：色点 + 班次名 + 该班次所有时段段（每段一个 `6-8` 式文本）。
+  /// 右侧附「还剩 X 响铃」：该班次联动闹钟里下一条还没响的（用户 2026-10-25 要求）。
   Widget _shiftRow(BuildContext context, ShiftClass shift) {
     final segments = shift.allSegments;
     final timeText = segments
         .map((s) => s.cellLabel)
         .join(' / ');
+    final ringIn = _nextAlarmRingIn(shift);
+    final ringText = ringIn == null
+        ? null
+        : Text(ringIn,
+            maxLines: 1,
+            style: AppTokens.labelSecondary.copyWith(
+                color: Theme.of(context).colorScheme.primary));
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1042,8 +1056,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             ],
           ),
         ),
+        // 右侧：下一条联动闹钟还剩多久响铃。
+        if (ringText != null) ...[const SizedBox(width: AppTokens.gapIconText), ringText],
       ],
     );
+  }
+
+  /// 该班次在 [selected] 那天下一条还没响的联动闹钟还剩多少分钟；
+  /// 闹钟关着 / 没配 / 已全部响过返回 null。
+  String? _nextAlarmRingIn(ShiftClass shift) {
+    if (!shift.alarmEnabled || shift.alarms.isEmpty) return null;
+    final now = DateTime.now();
+    final fireAts = [
+      for (final a in shift.alarms) shiftAlarmFireAt(_selected, shift, a),
+    ]..sort();
+    for (final fireAt in fireAts) {
+      final minutes = fireAt.difference(now).inMinutes;
+      if (minutes > 0) return L10n.ringIn(minutes);
+    }
+    return null;
   }
 
   /// 班次名是否就是它自己的时段文本（值班制模板「0-2」「22-24」这类）。
