@@ -69,7 +69,8 @@ object CalendarSyncManager {
                 values,
             )
             nullSafeId(uri?.lastPathSegment ?: "")
-        } ?: queryCalendars(resolver, listOf("_id", "account_name", "calendar_displayName"))
+        }.getOrNull()
+            ?: queryCalendars(resolver, listOf("_id", "account_name", "calendar_displayName"))
             .firstOrNull()
             ?.let { nullSafeId(it["_id"]) } // 创建失败回退首个可见日历（只读也能读）
     }
